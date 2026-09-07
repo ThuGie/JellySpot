@@ -103,8 +103,9 @@ public class JellySpotStore
         await using var conn = new SqliteConnection(ConnectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT json FROM user_tokens WHERE jellyfin_user_id=$id";
-        cmd.Parameters.AddWithValue("$id", userId.ToString("N"));
+        cmd.CommandText = "SELECT json FROM user_tokens WHERE jellyfin_user_id=$n OR jellyfin_user_id=$d LIMIT 1";
+        cmd.Parameters.AddWithValue("$n", userId.ToString("N"));
+        cmd.Parameters.AddWithValue("$d", userId.ToString("D"));
         var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result is string json ? JsonSerializer.Deserialize<SpotifyTokens>(json) : null;
     }

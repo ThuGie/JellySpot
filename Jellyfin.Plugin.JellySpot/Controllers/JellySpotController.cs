@@ -140,7 +140,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> GetMe(CancellationToken ct)
     {
-        var userId = GetUserId();
+        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
         var tokens = await _store.GetTokensAsync(userId, ct).ConfigureAwait(false);
         var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
         return Ok(new
@@ -190,7 +190,10 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> Unlink(CancellationToken ct)
     {
-        await _auth.UnlinkAsync(GetUserId(), ct).ConfigureAwait(false);
+        foreach (var id in GetUserIdCandidates())
+        {
+            await _auth.UnlinkAsync(id, ct).ConfigureAwait(false);
+        }
         return NoContent();
     }
 
@@ -198,7 +201,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> Search([FromQuery, Required] string q, [FromQuery] string type = "track,album,playlist", [FromQuery] int limit = 10, [FromQuery] int offset = 0, CancellationToken ct = default)
     {
-        var result = await _spotify.SearchAsync(GetUserId(), q, type, limit, offset, ct).ConfigureAwait(false);
+        var result = await _spotify.SearchAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), q, type, limit, offset, ct).ConfigureAwait(false);
         if (result == null)
         {
             return Ok(new { });
@@ -211,7 +214,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> Playlists(CancellationToken ct)
     {
-        var playlists = await _spotify.GetUserPlaylistsAsync(GetUserId(), ct).ConfigureAwait(false);
+        var playlists = await _spotify.GetUserPlaylistsAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         return Ok(playlists);
     }
 
@@ -219,7 +222,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> Playlist(string id, CancellationToken ct)
     {
-        var result = await _spotify.GetPlaylistWithTracksAsync(GetUserId(), id, ct).ConfigureAwait(false);
+        var result = await _spotify.GetPlaylistWithTracksAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), id, ct).ConfigureAwait(false);
         if (result == null)
         {
             return NotFound();
@@ -232,7 +235,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> LikedSongs(CancellationToken ct)
     {
-        var tracks = await _spotify.GetLikedSongsAsync(GetUserId(), ct).ConfigureAwait(false);
+        var tracks = await _spotify.GetLikedSongsAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         return Ok(tracks);
     }
 
@@ -255,7 +258,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> UpdateSettings([FromBody] MonitorRequest request, CancellationToken ct)
     {
-        var userId = GetUserId();
+        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
         var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
         if (request.PlaylistIds != null)
         {
@@ -304,7 +307,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> QueueTracks([FromBody] QueueTracksRequest request, CancellationToken ct)
     {
-        var userId = GetUserId();
+        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
         foreach (var trackId in request.TrackIds.Distinct())
         {
             var track = await _spotify.GetTrackAsync(userId, trackId, ct).ConfigureAwait(false);
@@ -323,7 +326,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> QueuePlaylist(string id, CancellationToken ct)
     {
-        var userId = GetUserId();
+        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
         var result = await _spotify.GetPlaylistWithTracksAsync(userId, id, ct).ConfigureAwait(false);
         if (result == null)
         {
@@ -349,7 +352,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> QueueLiked(CancellationToken ct)
     {
-        var userId = GetUserId();
+        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
         var tracks = await _spotify.GetLikedSongsAsync(userId, ct).ConfigureAwait(false);
         foreach (var track in tracks)
         {
@@ -366,7 +369,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> QueueAlbum(string id, CancellationToken ct)
     {
-        var userId = GetUserId();
+        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
         var tracks = await _spotify.GetAlbumTracksAsync(userId, id, ct).ConfigureAwait(false);
         foreach (var track in tracks)
         {
@@ -403,20 +406,49 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> SyncNow(CancellationToken ct)
     {
-        await _sync.SyncUserAsync(GetUserId(), ct).ConfigureAwait(false);
+        await _sync.SyncUserAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         return Ok(new { Status = "started" });
     }
 
     private Guid GetUserId()
     {
+        var candidates = GetUserIdCandidates();
+        if (candidates.Count > 0)
+        {
+            return candidates[0];
+        }
+
+        throw new UnauthorizedAccessException("Unable to resolve Jellyfin user.");
+    }
+
+    private List<Guid> GetUserIdCandidates()
+    {
+        var ids = new List<Guid>();
+
+        void add(Guid id)
+        {
+            if (id != Guid.Empty && !ids.Contains(id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        // Same claim JellySeerr / Jellyfin 10.11 APIs use. Never take NameIdentifier first —
+        // that GUID is often a session id, so tokens look "unlinked" on the next request.
+        var jellyfinClaim = User.Claims.FirstOrDefault(c =>
+            c.Type.Equals("Jellyfin-UserId", StringComparison.OrdinalIgnoreCase));
+        if (jellyfinClaim != null && Guid.TryParse(jellyfinClaim.Value, out var jellyfinId))
+        {
+            add(jellyfinId);
+        }
+
         foreach (var claim in User.Claims)
         {
-            if ((claim.Type.Contains("user_id", StringComparison.OrdinalIgnoreCase) ||
-                 claim.Type.Equals("UserId", StringComparison.OrdinalIgnoreCase) ||
-                 claim.Type.EndsWith("/nameidentifier", StringComparison.OrdinalIgnoreCase)) &&
+            if ((claim.Type.Equals("UserId", StringComparison.OrdinalIgnoreCase) ||
+                 claim.Type.Contains("Jellyfin-UserId", StringComparison.OrdinalIgnoreCase)) &&
                 Guid.TryParse(claim.Value, out var id))
             {
-                return id;
+                add(id);
             }
         }
 
@@ -426,11 +458,30 @@ public class JellySpotController : ControllerBase
             var user = _userManager.GetUserByName(name);
             if (user != null)
             {
-                return user.Id;
+                add(user.Id);
             }
         }
 
-        throw new UnauthorizedAccessException("Unable to resolve Jellyfin user.");
+        return ids;
+    }
+
+    private async Task<Guid> ResolveLinkedUserIdAsync(CancellationToken ct)
+    {
+        var candidates = GetUserIdCandidates();
+        if (candidates.Count == 0)
+        {
+            throw new UnauthorizedAccessException("Unable to resolve Jellyfin user.");
+        }
+
+        foreach (var id in candidates)
+        {
+            if (await _store.GetTokensAsync(id, ct).ConfigureAwait(false) != null)
+            {
+                return id;
+            }
+        }
+
+        return candidates[0];
     }
 
     private ActionResult ServeEmbedded(string resourceName, string contentType)

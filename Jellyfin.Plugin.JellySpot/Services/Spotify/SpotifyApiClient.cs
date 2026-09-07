@@ -292,7 +292,7 @@ public class SpotifyApiClient
         var tokens = await _auth.GetValidTokensAsync(userId, ct).ConfigureAwait(false);
         if (tokens == null)
         {
-            throw new InvalidOperationException("Spotify account is not linked for this user.");
+            return null;
         }
 
         for (var attempt = 0; attempt < 5; attempt++)
