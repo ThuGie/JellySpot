@@ -103,6 +103,7 @@ jobs:
             --arg owner "${{ github.repository_owner }}" \
             --arg category "Music" \
             --arg abi "10.11.0.0" \
+            --arg imageUrl "https://raw.githubusercontent.com/${{ github.repository }}/main/assets/jellyspot.png" \
             '
             (map(select(.guid == $guid)) | length) as $exists |
             if $exists == 0 then
@@ -113,12 +114,14 @@ jobs:
                 overview: $overview,
                 owner: $owner,
                 category: $category,
+                imageUrl: $imageUrl,
                 versions: []
               }]
             else . end
             |
             map(
               if .guid == $guid then
+                .imageUrl = $imageUrl |
                 .versions = (
                   [{
                     version: $version,

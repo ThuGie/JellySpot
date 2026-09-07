@@ -6,6 +6,7 @@
     "overview": "Spotify browse + sync for Jellyfin",
     "owner": "ThuGie",
     "category": "Music",
+    "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySpot/main/assets/jellyspot.png",
     "versions": [
       {
         "version": "1.0.0.0",

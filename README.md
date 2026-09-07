@@ -9,6 +9,11 @@ Single Jellyfin plugin that links Spotify accounts, browses/searchs Spotify, and
 - A [Spotify Developer](https://developer.spotify.com/dashboard) application
 - Spotify **Premium for the Spotify app owner** is required under current Spotify Development Mode rules (end-user Free accounts can still authorize for library/metadata)
 
+## Icon
+
+Catalog image follows the official Jellyfin UX plugin size **1920×1080** (`assets/jellyspot.png`).
+Installed packages also include a **512×512** `thumb.png` referenced by `meta.json` `imagePath`.
+
 ## Install (plugin repository)
 
 1. In Jellyfin: **Dashboard → Plugins → Repositories → +**

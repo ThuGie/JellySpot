@@ -1,13 +1,14 @@
 {
-  "category": "Metadata",
+  "category": "Music",
   "guid": "a7c3e8f1-9b2d-4e5a-8f6c-1d2e3f4a5b6c",
   "name": "JellySpot",
   "description": "Sync Spotify libraries and playlists to a local music folder via YouTube Music matching.",
-  "owner": "JellySpot",
+  "owner": "ThuGie",
   "overview": "Spotify browse + sync for Jellyfin",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-08T00:00:00.0000000Z",
   "version": "1.0.0.0",
   "changelog": "Initial release",
-  "imageUrl": ""
+  "imagePath": "thumb.png",
+  "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySpot/main/assets/jellyspot.png"
 }

@@ -36,12 +36,19 @@ cp "$BUILD_DIR"/SQLitePCLRaw.*.dll "$STAGE/" 2>/dev/null || true
 cp "$BUILD_DIR"/AngleSharp.dll "$STAGE/" 2>/dev/null || true
 cp "$BUILD_DIR"/CliWrap.dll "$STAGE/" 2>/dev/null || true
 
+# Plugin icon (local install thumb) + keep catalog asset out of zip
+if [[ -f "$ROOT/Jellyfin.Plugin.JellySpot/thumb.png" ]]; then
+  cp "$ROOT/Jellyfin.Plugin.JellySpot/thumb.png" "$STAGE/"
+elif [[ -f "$ROOT/assets/thumb.png" ]]; then
+  cp "$ROOT/assets/thumb.png" "$STAGE/"
+fi
+
 if [[ -d "$BUILD_DIR/runtimes" ]]; then
   cp -a "$BUILD_DIR/runtimes" "$STAGE/"
 fi
 
-# Refresh version inside staged meta.json
-jq --arg v "$VERSION" '.version = $v' "$STAGE/meta.json" > "$STAGE/meta.tmp"
+# Ensure meta.json points at packaged thumb
+jq --arg v "$VERSION" '.version = $v | .imagePath = "thumb.png"' "$STAGE/meta.json" > "$STAGE/meta.tmp"
 mv "$STAGE/meta.tmp" "$STAGE/meta.json"
 
 ZIP_NAME="JellySpot_${VERSION}.zip"

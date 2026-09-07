@@ -45,8 +45,20 @@ foreach ($dll in $dlls) {
 Copy-Item (Join-Path $outBuild "SQLitePCLRaw.*.dll") $stage -Force -ErrorAction SilentlyContinue
 Copy-Item $meta (Join-Path $stage "meta.json") -Force
 
+$thumbCandidates = @(
+    (Join-Path $root "Jellyfin.Plugin.JellySpot\thumb.png"),
+    (Join-Path $root "assets\thumb.png")
+)
+foreach ($thumb in $thumbCandidates) {
+    if (Test-Path $thumb) {
+        Copy-Item $thumb (Join-Path $stage "thumb.png") -Force
+        break
+    }
+}
+
 $metaObj = Get-Content (Join-Path $stage "meta.json") | ConvertFrom-Json
 $metaObj.version = $Version
+$metaObj.imagePath = "thumb.png"
 $metaObj | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $stage "meta.json")
 
 $runtimes = Join-Path $outBuild "runtimes"

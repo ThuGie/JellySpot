@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <None Include="meta.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="thumb.png" CopyToOutputDirectory="PreserveNewest" Condition="Exists('thumb.png')" />
   </ItemGroup>
 
   <ItemGroup>
