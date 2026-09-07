@@ -26,6 +26,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
     window.jellySpotPlugin = {
         TAB_DEFS: {
             browse: { sectionClass: 'jellyspot-browse-sections', defaultTitle: 'Browse' },
+            liked: { sectionClass: 'jellyspot-liked-sections', defaultTitle: 'Liked' },
             sync: { sectionClass: 'jellyspot-sync-sections', defaultTitle: 'Sync' },
             queue: { sectionClass: 'jellyspot-queue-sections', defaultTitle: 'Queue' }
         },
@@ -85,7 +86,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         homePageExists: function () {
             const page = document.getElementById('indexPage');
-            return !!(page && page.querySelector('#homeTab') && page.querySelector('#favoritesTab'));
+            return !!(page && (page.querySelector('#homeTab') || page.querySelector('.homeSectionsContainer')));
         },
 
         isHomeTabContext: function () {
@@ -249,19 +250,64 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
                 log.info('blocking Jellyfin tabchange handler for plugin tab index ' + index);
                 event.stopImmediatePropagation();
+                self.showPluginTab(selectedButton.getAttribute('data-jellyspot-tab'));
+            }, true);
 
-                const page = document.getElementById('indexPage');
-                if (page) {
-                    page.querySelectorAll('.tabContent[data-index]').forEach(function (panel) {
-                        const panelIndex = parseInt(panel.getAttribute('data-index'), 10);
-                        panel.classList.toggle('is-active', panelIndex === index);
-                        panel.classList.toggle('hide', panelIndex !== index);
-                    });
+            tabs.addEventListener('tabchange', function (event) {
+                if (!self.isHomeTabContext()) {
+                    return;
                 }
+
+                const index = parseInt(event.detail && event.detail.selectedTabIndex, 10);
+                const selectedButton = tabs.querySelector('.emby-tab-button[data-index="' + index + '"]');
+                if (selectedButton && selectedButton.getAttribute('data-jellyspot-tab')) {
+                    return;
+                }
+
+                self.hidePluginPanels();
             }, true);
         },
 
         onTabShown: function (id) {
+            this.showPluginTab(id);
+        },
+
+        hidePluginPanels: function () {
+            const page = document.getElementById('indexPage');
+            if (!page) {
+                return;
+            }
+            page.querySelectorAll('.tabContent[data-jellyspot-tab]').forEach(function (panel) {
+                panel.classList.add('hide');
+                panel.classList.remove('is-active');
+            });
+            const homeTab = page.querySelector('#homeTab');
+            const favoritesTab = page.querySelector('#favoritesTab');
+            if (homeTab) {
+                homeTab.classList.remove('hide');
+            }
+            if (favoritesTab) {
+                favoritesTab.classList.remove('hide');
+            }
+        },
+
+        showPluginTab: function (id) {
+            const page = document.getElementById('indexPage');
+            if (!page || !id) {
+                return;
+            }
+            page.querySelectorAll('.tabContent[data-jellyspot-tab]').forEach(function (panel) {
+                const active = panel.getAttribute('data-jellyspot-tab') === id;
+                panel.classList.toggle('hide', !active);
+                panel.classList.toggle('is-active', active);
+            });
+            ['#homeTab', '#favoritesTab'].forEach(function (sel) {
+                const native = page.querySelector(sel);
+                if (native) {
+                    native.classList.add('hide');
+                    native.classList.remove('is-active');
+                }
+            });
             this.mountTab(id);
         },
 
@@ -329,7 +375,8 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 self.attachPluginTabGuard(tabsEl);
                 const changed = self.applyTabs(page, tabsSlider);
                 if (changed) {
-                    log.info('native tab bar ready: browse, sync, queue');
+                    log.info('native tab bar ready: browse, liked, sync, queue');
+                    self.ensureDrawerLinks();
                     if (typeof tabsEl.refresh === 'function') {
                         try {
                             tabsEl.refresh();
@@ -393,6 +440,8 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
             if (id === 'browse') {
                 this.renderBrowse(root);
+            } else if (id === 'liked') {
+                this.renderLiked(root);
             } else if (id === 'sync') {
                 this.renderSync(root);
             } else if (id === 'queue') {
@@ -431,7 +480,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     self.loadPlaylists(root);
                 });
                 root.querySelector('.jellyspot-liked-btn').addEventListener('click', function () {
-                    self.queueItem('liked', 'liked', 'Liked Songs', root);
+                    self.loadLiked(root);
                 });
             }
         },
@@ -535,6 +584,88 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }).catch(function () {
                 self.setBrowseStatus(root, 'Search failed. Link Spotify under Sync.');
             });
+        },
+
+        artistsOf: function (item) {
+            const artists = this.pick(item, 'Artists', 'artists') || [];
+            if (Array.isArray(artists)) {
+                return artists.join(', ');
+            }
+            return String(artists);
+        },
+
+        loadLiked: function (root) {
+            const self = this;
+            const grid = root.querySelector('.jellyspot-browse-results') || root.querySelector('.jellyspot-liked-results');
+            if (!grid) {
+                return;
+            }
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/LikedSongs'), dataType: 'json' })
+                .then(function (tracks) {
+                    grid.innerHTML = '';
+                    (tracks || []).forEach(function (t) {
+                        const id = self.pick(t, 'Id', 'id');
+                        const name = self.pick(t, 'Name', 'name') || 'Untitled';
+                        const meta = self.artistsOf(t) || self.pick(t, 'Album', 'album') || 'Liked';
+                        self.addCard(grid, name, meta, self.coverOf(t), function () {
+                            self.queueItem('track', id, name, root);
+                        });
+                    });
+                    self.setBrowseStatus(root, (tracks || []).length + ' liked songs');
+                })
+                .catch(function () {
+                    self.setBrowseStatus(root, 'Could not load liked songs.');
+                });
+        },
+
+        renderLiked: function (root) {
+            if (!root.dataset.jellyspotMounted) {
+                root.dataset.jellyspotMounted = 'true';
+                root.innerHTML =
+                    '<h2 class="sectionTitle">Liked Songs</h2>' +
+                    '<p class="jellyspot-status">Your Spotify liked tracks. Queue one or sync the whole list from Sync.</p>' +
+                    '<div class="jellyspot-toolbar">' +
+                    '<button is="emby-button" type="button" class="raised button-submit jellyspot-queue-all-liked"><span>Queue all</span></button>' +
+                    '</div>' +
+                    '<div class="jellyspot-status jellyspot-browse-status"></div>' +
+                    '<div class="jellyspot-grid jellyspot-liked-results"></div>';
+                const self = this;
+                root.querySelector('.jellyspot-queue-all-liked').addEventListener('click', function () {
+                    self.queueItem('liked', 'liked', 'Liked Songs', root);
+                });
+            }
+            this.loadLiked(root);
+        },
+
+        ensureDrawerLinks: function () {
+            const drawer = document.querySelector('.mainDrawer-scrollContainer, .navMenuOption, .navDrawer');
+            const host = document.querySelector('.mainDrawer-scrollContainer') || document.querySelector('.navDrawer');
+            if (!host || document.getElementById('jellyspot-drawer-browse')) {
+                return;
+            }
+
+            const self = this;
+            const btn = document.createElement('a');
+            btn.id = 'jellyspot-drawer-browse';
+            btn.className = 'navMenuOption emby-button';
+            btn.href = '#/home';
+            btn.innerHTML = '<span class="material-icons navMenuOptionIcon music_note" aria-hidden="true"></span><span class="navMenuOptionText">JellySpot</span>';
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (window.location.hash.indexOf('home') < 0) {
+                    window.location.hash = '#/home';
+                }
+                setTimeout(function () {
+                    const tab = document.querySelector('.headerTabs [data-jellyspot-tab="browse"]');
+                    if (tab) {
+                        tab.click();
+                    }
+                }, 400);
+            });
+            host.appendChild(btn);
+            if (!drawer) {
+                return;
+            }
         },
 
         loadPlaylists: function (root) {
