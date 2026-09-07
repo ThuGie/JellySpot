@@ -8,6 +8,10 @@ PROJECT="$ROOT/Jellyfin.Plugin.JellySpot/Jellyfin.Plugin.JellySpot.csproj"
 BUILD_DIR="$ROOT/Jellyfin.Plugin.JellySpot/bin/Release/net9.0"
 STAGE="$ROOT/.package-stage"
 
+if [[ "$OUT_DIR" != /* ]]; then
+  OUT_DIR="$ROOT/$OUT_DIR"
+fi
+
 if [[ -z "$VERSION" ]]; then
   VERSION="$(jq -r '.version // "1.0.0.0"' "$ROOT/Jellyfin.Plugin.JellySpot/meta.json")"
 fi
