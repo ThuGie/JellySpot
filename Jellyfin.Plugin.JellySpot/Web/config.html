@@ -1,0 +1,67 @@
+<div id="jellyspotConfigPage" data-role="page" class="page type-interior pluginConfigurationPage jellyspot-page fullWidthContent" data-controller="__plugin/JellySpotConfigJs" data-title="JellySpot">
+  <div class="content-primary">
+    <div class="verticalSection">
+      <div class="sectionTitleContainer">
+        <h2 class="sectionTitle">JellySpot Admin</h2>
+      </div>
+      <p>Storage, Spotify app credentials, and download limits.</p>
+
+      <form id="jellyspotConfigForm">
+        <div class="inputContainer">
+          <label class="inputLabel" for="storageRootPath">Storage root path</label>
+          <input is="emby-input" id="storageRootPath" type="text" />
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel" for="spotifyClientId">Spotify Client ID</label>
+          <input is="emby-input" id="spotifyClientId" type="text" />
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel" for="spotifyClientSecret">Spotify Client Secret</label>
+          <input is="emby-input" id="spotifyClientSecret" type="password" />
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel" for="spotifyRedirectUri">OAuth redirect URI</label>
+          <input is="emby-input" id="spotifyRedirectUri" type="text" />
+          <div class="fieldDescription">Must match the redirect URI in your Spotify Developer Dashboard.</div>
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel" for="spotifyRps">Spotify requests / second</label>
+          <input is="emby-input" id="spotifyRps" type="number" />
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel" for="downloadConcurrency">Download concurrency</label>
+          <input is="emby-input" id="downloadConcurrency" type="number" />
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel" for="preferredFormat">Preferred format</label>
+          <select is="emby-select" id="preferredFormat">
+            <option value="m4a">m4a</option>
+            <option value="mp3">mp3</option>
+            <option value="opus">opus</option>
+            <option value="ogg">ogg</option>
+          </select>
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel" for="minMatchScore">Minimum match score</label>
+          <input is="emby-input" id="minMatchScore" type="number" />
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel" for="syncIntervalMinutes">Default sync interval (minutes)</label>
+          <input is="emby-input" id="syncIntervalMinutes" type="number" />
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel" for="ffmpegPath">FFmpeg path (optional)</label>
+          <input is="emby-input" id="ffmpegPath" type="text" />
+        </div>
+        <label class="checkboxContainer">
+          <input is="emby-checkbox" type="checkbox" id="triggerLibraryRefresh" />
+          <span>Trigger Jellyfin library refresh after sync</span>
+        </label>
+        <br />
+        <button is="emby-button" type="submit" class="raised button-submit block">
+          <span>Save</span>
+        </button>
+      </form>
+    </div>
+  </div>
+</div>

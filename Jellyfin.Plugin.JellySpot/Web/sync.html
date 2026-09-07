@@ -1,0 +1,44 @@
+<div id="jellyspotSyncPage" data-role="page" class="page libraryPage jellyspot-page fullWidthContent" data-controller="__plugin/JellySpotSyncJs" data-title="JellySpot Sync">
+  <div class="content-primary">
+    <div class="verticalSection">
+      <h2 class="sectionTitle">My Sync</h2>
+      <p>Link your Spotify account and choose what to keep mirrored.</p>
+
+      <div class="jellyspot-card" style="margin:1rem 0;padding:1rem;border:1px solid rgba(255,255,255,.1);border-radius:10px;">
+        <div id="jellyspotLinkStatus">Checking link status…</div>
+        <div class="jellyspot-row" style="margin-top:0.75rem;">
+          <button is="emby-button" type="button" class="raised button-submit" id="jellyspotLinkBtn"><span>Link Spotify</span></button>
+          <button is="emby-button" type="button" class="raised" id="jellyspotUnlinkBtn"><span>Unlink</span></button>
+          <button is="emby-button" type="button" class="raised" id="jellyspotSyncNowBtn"><span>Sync now</span></button>
+        </div>
+      </div>
+
+      <div class="inputContainer">
+        <label class="checkboxContainer">
+          <input is="emby-checkbox" type="checkbox" id="jellyspotEnabled" />
+          <span>Enable automatic sync for my account</span>
+        </label>
+      </div>
+      <div class="inputContainer">
+        <label class="checkboxContainer">
+          <input is="emby-checkbox" type="checkbox" id="jellyspotLiked" />
+          <span>Sync Liked Songs</span>
+        </label>
+      </div>
+      <div class="inputContainer">
+        <label class="inputLabel" for="jellyspotInclude">Include artist filters (comma separated)</label>
+        <input is="emby-input" id="jellyspotInclude" type="text" />
+      </div>
+      <div class="inputContainer">
+        <label class="inputLabel" for="jellyspotExclude">Exclude artist filters (comma separated)</label>
+        <input is="emby-input" id="jellyspotExclude" type="text" />
+      </div>
+      <div class="inputContainer">
+        <label class="inputLabel">Monitored playlists</label>
+        <div id="jellyspotMonitoredPlaylists"></div>
+      </div>
+      <button is="emby-button" type="button" class="raised button-submit" id="jellyspotSaveSettingsBtn"><span>Save settings</span></button>
+      <div id="jellyspotSyncMeta" class="fieldDescription" style="margin-top:0.75rem;"></div>
+    </div>
+  </div>
+</div>

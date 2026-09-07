@@ -1,0 +1,156 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Plugin version (e.g. 1.0.0.0)"
+        required: true
+        default: "1.0.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Build
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          dotnet build Jellyfin.Plugin.JellySpot/Jellyfin.Plugin.JellySpot.csproj -c Release \
+            -p:Version="$VERSION" \
+            -p:AssemblyVersion="$VERSION" \
+            -p:FileVersion="$VERSION"
+
+      - name: Update meta.json version
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          jq --arg v "$VERSION" '.version = $v' Jellyfin.Plugin.JellySpot/meta.json > meta.tmp
+          mv meta.tmp Jellyfin.Plugin.JellySpot/meta.json
+
+      - name: Package
+        run: bash scripts/package.sh artifacts "${{ steps.ver.outputs.version }}"
+
+      - name: Checksum
+        id: sum
+        run: |
+          ZIP=$(ls artifacts/JellySpot_*.zip | head -n1)
+          CHECKSUM=$(md5sum "$ZIP" | awk '{print $1}')
+          echo "zip=$(basename "$ZIP")" >> "$GITHUB_OUTPUT"
+          echo "path=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+          echo "MD5: $CHECKSUM"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: JellySpot ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          files: |
+            ${{ steps.sum.outputs.path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update manifest.json
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          CHECKSUM="${{ steps.sum.outputs.checksum }}"
+          ZIP="${{ steps.sum.outputs.zip }}"
+          SOURCE_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${ZIP}"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          CHANGELOG="Release ${VERSION}"
+
+          if [ ! -f manifest.json ]; then
+            echo '[]' > manifest.json
+          fi
+
+          jq \
+            --arg version "$VERSION" \
+            --arg checksum "$CHECKSUM" \
+            --arg url "$SOURCE_URL" \
+            --arg ts "$TIMESTAMP" \
+            --arg changelog "$CHANGELOG" \
+            --arg guid "a7c3e8f1-9b2d-4e5a-8f6c-1d2e3f4a5b6c" \
+            --arg name "JellySpot" \
+            --arg description "Sync Spotify libraries and playlists to a local music folder via YouTube Music matching." \
+            --arg overview "Spotify browse + sync for Jellyfin" \
+            --arg owner "${{ github.repository_owner }}" \
+            --arg category "Music" \
+            --arg abi "10.11.0.0" \
+            '
+            (map(select(.guid == $guid)) | length) as $exists |
+            if $exists == 0 then
+              . + [{
+                guid: $guid,
+                name: $name,
+                description: $description,
+                overview: $overview,
+                owner: $owner,
+                category: $category,
+                versions: []
+              }]
+            else . end
+            |
+            map(
+              if .guid == $guid then
+                .versions = (
+                  [{
+                    version: $version,
+                    changelog: $changelog,
+                    targetAbi: $abi,
+                    sourceUrl: $url,
+                    checksum: $checksum,
+                    timestamp: $ts
+                  }] + (.versions | map(select(.version != $version)))
+                )
+              else . end
+            )
+            ' manifest.json > manifest.tmp
+          mv manifest.tmp manifest.json
+
+          jq --arg v "$VERSION" '.version = $v | .targetAbi = "10.11.0.0"' build.yaml > build.tmp || true
+          if [ -f build.yaml ]; then
+            # build.yaml is YAML; keep a simple rewrite via sed if jq fails on yaml
+            sed -i "s/^version:.*/version: \"$VERSION\"/" build.yaml || true
+          fi
+          cat manifest.json
+
+      - name: Commit manifest update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json build.yaml Jellyfin.Plugin.JellySpot/meta.json || true
+          if git diff --cached --quiet; then
+            echo "No manifest changes"
+            exit 0
+          fi
+          git commit -m "chore: update manifest for v${{ steps.ver.outputs.version }}"
+          # Prefer pushing to main even when release was triggered from a tag
+          git pull --rebase origin main || true
+          git push origin HEAD:main

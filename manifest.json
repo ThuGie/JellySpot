@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "a7c3e8f1-9b2d-4e5a-8f6c-1d2e3f4a5b6c",
+    "name": "JellySpot",
+    "description": "Sync Spotify libraries and playlists to a local music folder via YouTube Music matching.",
+    "overview": "Spotify browse + sync for Jellyfin",
+    "owner": "ThuGie",
+    "category": "Music",
+    "versions": []
+  }
+]

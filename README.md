@@ -1,0 +1,116 @@
+# JellySpot
+
+Single Jellyfin plugin that links Spotify accounts, browses/searchs Spotify, and syncs selected playlists / liked songs into a local music folder. Audio is matched from **YouTube Music** using a spotDL-style scoring engine (ISRC → scored title/artist/duration match), then downloaded with YoutubeExplode + FFmpeg and tagged with Spotify metadata and cover art.
+
+## Requirements
+
+- Jellyfin **10.11.x** (.NET 9)
+- **FFmpeg** on `PATH`, or set an absolute path in JellySpot admin settings
+- A [Spotify Developer](https://developer.spotify.com/dashboard) application
+- Spotify **Premium for the Spotify app owner** is required under current Spotify Development Mode rules (end-user Free accounts can still authorize for library/metadata)
+
+## Install (plugin repository)
+
+1. In Jellyfin: **Dashboard → Plugins → Repositories → +**
+2. Add repository:
+
+| Field | Value |
+|---|---|
+| Repository name | JellySpot |
+| Repository URL | `https://raw.githubusercontent.com/ThuGie/JellySpot/main/manifest.json` |
+
+3. Open **Catalog**, find **JellySpot**, install, then restart Jellyfin.
+
+Releases are built by GitHub Actions. Tag a version to publish:
+
+```bash
+git tag v1.0.0.0
+git push origin v1.0.0.0
+```
+
+That builds the plugin zip, creates a GitHub Release, and updates `manifest.json` on `main`.
+
+## Manual / local install
+
+```powershell
+dotnet build Jellyfin.Plugin.JellySpot/Jellyfin.Plugin.JellySpot.csproj -c Release
+./scripts/package.ps1 -JellyfinPluginsDir "$env:LOCALAPPDATA/jellyfin/plugins"
+```
+
+Or on Linux/macOS:
+
+```bash
+bash scripts/package.sh artifacts
+# unzip artifacts/JellySpot_*.zip into <jellyfin-data>/plugins/JellySpot/
+```
+
+## Spotify app setup
+
+1. Create an app in the Spotify Developer Dashboard.
+2. Add redirect URI (must match plugin admin setting), for example:
+
+```text
+http://127.0.0.1:8096/JellySpot/OAuth/Callback
+```
+
+Use your real Jellyfin base URL/port if different.
+
+3. Copy **Client ID** and **Client Secret** into **Dashboard → Plugins → JellySpot**.
+4. Set **Storage root path** to a folder that is (or will be) part of a Jellyfin music library.
+5. Each Jellyfin user opens **JellySpot Sync** → **Link Spotify**, then picks Liked Songs / playlists.
+
+## Features
+
+| Area | What you get |
+|---|---|
+| Admin | Storage path, Spotify credentials, rate limits, format, match threshold |
+| Browse | Spotify search + playlists; queue downloads / monitor |
+| My Sync | Per-user OAuth, monitored playlists, artist include/exclude filters, Sync now |
+| Queue | Status, match scores, rematch failed/completed items |
+| Sync task | Scheduled `JellySpot Sync` task; uses playlist `snapshot_id` to skip unchanged lists |
+
+## Anti-ban / rate-limit behavior
+
+- Global Spotify request pacing (configurable requests/sec)
+- Honors HTTP `429` + `Retry-After` with jitter
+- Disk cache for Spotify API responses (default 10 days)
+- Playlist sync skips work when `snapshot_id` is unchanged
+- Debounced UI search (max 10 results/page per Spotify Dev Mode)
+
+### Spotify Dev Mode caveats
+
+- New Development Mode apps are limited to **5 authorized users**
+- Batch track endpoints and some browse APIs were removed for Dev Mode in 2026
+- Extended Quota is hard to get for personal projects — plan for household-scale use
+
+## Folder layout
+
+```text
+{StorageRoot}/
+  {AlbumArtist}/
+    {Album} ({Year})/
+      {Track} - {Title}.m4a
+      cover.jpg
+  Playlists/
+    {PlaylistName}.m3u8
+```
+
+## How matching works
+
+1. Prefer cached `spotifyTrackId → youtubeVideoId`
+2. Search YouTube Music by **ISRC** when available
+3. Fall back to `"Artist - Title"` (songs, then videos)
+4. Score candidates (artist, title fuzz, duration, album, verified bonus, forbidden-word penalties)
+5. Accept when score ≥ configured minimum (default **80**)
+
+## Legal note
+
+JellySpot does **not** download audio from Spotify streams. Spotify is used as a catalog/metadata source; audio is obtained from YouTube/YouTube Music. You are responsible for complying with applicable laws and service terms.
+
+## Development
+
+```powershell
+dotnet build Jellyfin.Plugin.JellySpot/Jellyfin.Plugin.JellySpot.csproj -c Release
+```
+
+Target ABI: Jellyfin 10.11 / `net9.0`.

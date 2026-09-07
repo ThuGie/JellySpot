@@ -1,0 +1,8 @@
+# JellySpot
+bin/
+obj/
+*.user
+.vs/
+publish/
+artifacts/
+.package-stage/
