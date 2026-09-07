@@ -77,14 +77,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update manifest.json
+      - name: Update manifest on main
         run: |
+          set -euo pipefail
           VERSION="${{ steps.ver.outputs.version }}"
           CHECKSUM="${{ steps.sum.outputs.checksum }}"
           ZIP="${{ steps.sum.outputs.zip }}"
           SOURCE_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${ZIP}"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           CHANGELOG="Release ${VERSION}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
 
           if [ ! -f manifest.json ]; then
             echo '[]' > manifest.json
@@ -137,23 +143,19 @@ jobs:
             ' manifest.json > manifest.tmp
           mv manifest.tmp manifest.json
 
-          jq --arg v "$VERSION" '.version = $v | .targetAbi = "10.11.0.0"' build.yaml > build.tmp || true
+          jq --arg v "$VERSION" '.version = $v' Jellyfin.Plugin.JellySpot/meta.json > meta.tmp
+          mv meta.tmp Jellyfin.Plugin.JellySpot/meta.json
+
           if [ -f build.yaml ]; then
-            # build.yaml is YAML; keep a simple rewrite via sed if jq fails on yaml
             sed -i "s/^version:.*/version: \"$VERSION\"/" build.yaml || true
           fi
-          cat manifest.json
 
-      - name: Commit manifest update
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add manifest.json build.yaml Jellyfin.Plugin.JellySpot/meta.json || true
+          git add manifest.json build.yaml Jellyfin.Plugin.JellySpot/meta.json
           if git diff --cached --quiet; then
             echo "No manifest changes"
             exit 0
           fi
-          git commit -m "chore: update manifest for v${{ steps.ver.outputs.version }}"
-          # Prefer pushing to main even when release was triggered from a tag
-          git pull --rebase origin main || true
+          git commit -m "chore: update manifest for v${VERSION}"
+          git pull --rebase origin main
           git push origin HEAD:main
+          cat manifest.json
