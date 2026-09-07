@@ -6,6 +6,8 @@ public class PluginConfiguration : BasePluginConfiguration
 {
     public string StorageRootPath { get; set; } = string.Empty;
 
+    public string SelectedLibraryId { get; set; } = string.Empty;
+
     public string SpotifyClientId { get; set; } = string.Empty;
 
     public string SpotifyClientSecret { get; set; } = string.Empty;

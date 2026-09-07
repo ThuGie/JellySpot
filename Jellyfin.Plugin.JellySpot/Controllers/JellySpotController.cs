@@ -3,6 +3,7 @@ using System.Reflection;
 using Jellyfin.Plugin.JellySpot.Configuration;
 using Jellyfin.Plugin.JellySpot.Helpers;
 using Jellyfin.Plugin.JellySpot.Models;
+using Jellyfin.Plugin.JellySpot.Services;
 using Jellyfin.Plugin.JellySpot.Services.Download;
 using Jellyfin.Plugin.JellySpot.Services.Spotify;
 using Jellyfin.Plugin.JellySpot.Services.Storage;
@@ -25,7 +26,9 @@ public class JellySpotController : ControllerBase
     private readonly SyncEngine _sync;
     private readonly DownloadQueueService _queue;
     private readonly IUserManager _userManager;
+    private readonly ILibraryManager _libraryManager;
     private readonly IApplicationPaths _applicationPaths;
+    private readonly FfmpegLocator _ffmpeg;
     private readonly ILogger<JellySpotController> _logger;
 
     public JellySpotController(
@@ -35,7 +38,9 @@ public class JellySpotController : ControllerBase
         SyncEngine sync,
         DownloadQueueService queue,
         IUserManager userManager,
+        ILibraryManager libraryManager,
         IApplicationPaths applicationPaths,
+        FfmpegLocator ffmpeg,
         ILogger<JellySpotController> logger)
     {
         _auth = auth;
@@ -44,7 +49,9 @@ public class JellySpotController : ControllerBase
         _sync = sync;
         _queue = queue;
         _userManager = userManager;
+        _libraryManager = libraryManager;
         _applicationPaths = applicationPaths;
+        _ffmpeg = ffmpeg;
         _logger = logger;
     }
 
@@ -58,9 +65,42 @@ public class JellySpotController : ControllerBase
     [Authorize(Policy = "RequiresElevation")]
     public ActionResult GetHealth()
     {
+        var libraries = LibraryCatalog.ListLibraries(_libraryManager, _logger);
+        var storageRoot = LibraryCatalog.ResolveStorageRoot(_libraryManager, _logger);
+        var storageExists = !string.IsNullOrWhiteSpace(storageRoot) && Directory.Exists(storageRoot);
+        var storageWritable = false;
+        if (storageExists)
+        {
+            try
+            {
+                var probe = Path.Combine(storageRoot!, ".jellyspot-write-probe");
+                System.IO.File.WriteAllText(probe, "ok");
+                System.IO.File.Delete(probe);
+                storageWritable = true;
+            }
+            catch
+            {
+                storageWritable = false;
+            }
+        }
+
         return Ok(new
         {
-            fileTransformation = FileTransformationHelper.IsPresent(_applicationPaths)
+            fileTransformation = FileTransformationHelper.IsPresent(_applicationPaths),
+            ffmpegReady = _ffmpeg.IsReady,
+            ffmpegPath = _ffmpeg.EncoderPath,
+            ffmpegVersion = _ffmpeg.EncoderVersion,
+            ffmpegSource = _ffmpeg.Source,
+            storageRoot,
+            storageExists,
+            storageWritable,
+            libraries = libraries.Select(l => new
+            {
+                id = l.Id,
+                name = l.Name,
+                collectionType = l.CollectionType,
+                locations = l.Locations
+            })
         });
     }
 
@@ -77,6 +117,7 @@ public class JellySpotController : ControllerBase
     {
         var current = Plugin.Instance!.Configuration;
         current.StorageRootPath = config.StorageRootPath?.Trim() ?? string.Empty;
+        current.SelectedLibraryId = config.SelectedLibraryId?.Trim() ?? string.Empty;
         current.SpotifyClientId = config.SpotifyClientId?.Trim() ?? string.Empty;
         current.SpotifyClientSecret = config.SpotifyClientSecret?.Trim() ?? string.Empty;
         current.SpotifyRedirectUri = string.IsNullOrWhiteSpace(config.SpotifyRedirectUri)

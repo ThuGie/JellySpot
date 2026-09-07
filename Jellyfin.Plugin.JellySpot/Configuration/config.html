@@ -9,7 +9,7 @@
                 <strong>File Transformation</strong> plugin (same as JellySeerr). Restart Jellyfin after install.
                 Admin settings stay here under Dashboard → JellySpot.
             </p>
-            <div id="jellyspotFtStatus" class="fieldDescription">Checking File Transformation…</div>
+            <div id="jellyspotDetectStatus" class="fieldDescription">Detecting FFmpeg and libraries…</div>
 
             <div class="localnav" style="display:flex;gap:.35em;flex-wrap:wrap;margin:1em 0 1.25em;">
                 <button is="emby-button" type="button" class="raised button-submit jellyspot-tab" data-tab="admin"><span>Admin</span></button>
@@ -23,13 +23,20 @@
                 <form class="jellySpotConfigurationForm">
                     <div class="verticalSection">
                         <h3 class="sectionTitle">Storage</h3>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="text" id="storageRootPath" label="Storage root path" />
-                            <div class="fieldDescription">Folder where downloads are saved. Point a Jellyfin music library at this path.</div>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="selectedLibraryId">Music library</label>
+                            <select is="emby-select" id="selectedLibraryId" class="emby-select-withcolor">
+                                <option value="">Custom path…</option>
+                            </select>
+                            <div class="fieldDescription">Filled from Dashboard → Libraries (same source StreamReady uses). Music libraries are listed first.</div>
                         </div>
                         <div class="inputContainer">
-                            <input is="emby-input" type="text" id="ffmpegPath" label="FFmpeg path (optional)" />
-                            <div class="fieldDescription">Leave empty to use ffmpeg from PATH / Jellyfin.</div>
+                            <input is="emby-input" type="text" id="storageRootPath" label="Storage root path" />
+                            <div class="fieldDescription">Download folder. Picking a library above fills this with that library’s first folder.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="ffmpegPath" label="FFmpeg override (optional)" />
+                            <div class="fieldDescription" id="ffmpegPathHint">Leave empty to use Jellyfin’s encoder (Dashboard → Playback → Transcoding), then PATH.</div>
                         </div>
                         <label class="checkboxContainer">
                             <input is="emby-checkbox" type="checkbox" id="triggerLibraryRefresh" />
@@ -208,6 +215,7 @@
 
             function loadConfig(config) {
                 setVal('storageRootPath', pick(config, 'StorageRootPath', 'storageRootPath') || '');
+                setVal('selectedLibraryId', pick(config, 'SelectedLibraryId', 'selectedLibraryId') || '');
                 setVal('spotifyClientId', pick(config, 'SpotifyClientId', 'spotifyClientId') || '');
                 setVal('spotifyClientSecret', pick(config, 'SpotifyClientSecret', 'spotifyClientSecret') || '');
                 setVal('spotifyRedirectUri', pick(config, 'SpotifyRedirectUri', 'spotifyRedirectUri') || 'http://127.0.0.1:8096/JellySpot/OAuth/Callback');
@@ -223,6 +231,7 @@
 
             function readConfig(config) {
                 config.StorageRootPath = val('storageRootPath').trim();
+                config.SelectedLibraryId = val('selectedLibraryId').trim();
                 config.SpotifyClientId = val('spotifyClientId').trim();
                 config.SpotifyClientSecret = val('spotifyClientSecret').trim();
                 config.SpotifyRedirectUri = val('spotifyRedirectUri').trim();
@@ -534,26 +543,75 @@
             page.querySelector('#jellyspotQueueRefresh').addEventListener('click', loadQueue);
             page.querySelector('#jellyspotQueueFilter').addEventListener('change', loadQueue);
 
-            function refreshFtStatus() {
-                var el = page.querySelector('#jellyspotFtStatus');
-                if (!el) return;
+            function firstLocation(lib) {
+                var locs = pick(lib, 'Locations', 'locations') || [];
+                return locs[0] || '';
+            }
+
+            function fillLibraries(libraries, selectedId) {
+                var sel = page.querySelector('#selectedLibraryId');
+                if (!sel) return;
+                var current = selectedId || sel.value || '';
+                sel.innerHTML = '<option value="">Custom path…</option>';
+                (libraries || []).forEach(function (lib) {
+                    var id = pick(lib, 'Id', 'id') || '';
+                    var name = pick(lib, 'Name', 'name') || id;
+                    var kind = pick(lib, 'CollectionType', 'collectionType') || 'mixed';
+                    var path = firstLocation(lib);
+                    var opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = name + ' (' + kind + ')' + (path ? ' — ' + path : '');
+                    opt.setAttribute('data-path', path);
+                    sel.appendChild(opt);
+                });
+                if (current) sel.value = current;
+            }
+
+            function refreshDetectStatus() {
+                var el = page.querySelector('#jellyspotDetectStatus');
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/admin/health'), dataType: 'json' })
                     .then(function (health) {
-                        var ok = pick(health, 'fileTransformation', 'FileTransformation') === true;
-                        el.textContent = ok
-                            ? 'File Transformation is installed. Home tabs: Browse, Sync, Queue.'
-                            : 'File Transformation is missing. Install it or home tabs will not appear.';
+                        fillLibraries(pick(health, 'libraries', 'Libraries') || [], val('selectedLibraryId'));
+                        var ffOk = pick(health, 'ffmpegReady', 'FfmpegReady') === true;
+                        var ffPath = pick(health, 'ffmpegPath', 'FfmpegPath') || 'ffmpeg';
+                        var ffVer = pick(health, 'ffmpegVersion', 'FfmpegVersion') || '';
+                        var ffSrc = pick(health, 'ffmpegSource', 'FfmpegSource') || '';
+                        var storage = pick(health, 'storageRoot', 'StorageRoot') || '';
+                        var writable = pick(health, 'storageWritable', 'StorageWritable') === true;
+                        var ft = pick(health, 'fileTransformation', 'FileTransformation') === true;
+                        var hint = page.querySelector('#ffmpegPathHint');
+                        if (hint) {
+                            hint.textContent = ffOk
+                                ? ('Detected from ' + (ffSrc || 'Jellyfin') + ': ' + ffPath + (ffVer ? ' (v' + ffVer + ')' : '') + '. Override only if you need a different binary.')
+                                : 'Jellyfin has not reported FFmpeg yet. Leave empty to use PATH, or set an override.';
+                        }
+                        if (!el) return;
+                        el.textContent =
+                            (ffOk ? 'FFmpeg ready' : 'FFmpeg not detected') +
+                            (ffVer ? ' v' + ffVer : '') + ' · ' + ffPath +
+                            ' — Storage ' + (writable ? 'writable' : (storage ? 'not writable yet' : 'not set')) +
+                            (storage ? ' (' + storage + ')' : '') +
+                            ' — File Transformation ' + (ft ? 'installed' : 'missing');
                     })
                     .catch(function () {
-                        el.textContent = 'Could not check File Transformation status.';
+                        if (el) el.textContent = 'Could not detect FFmpeg / libraries.';
                     });
+            }
+
+            var librarySelect = page.querySelector('#selectedLibraryId');
+            if (librarySelect) {
+                librarySelect.addEventListener('change', function () {
+                    var opt = librarySelect.options[librarySelect.selectedIndex];
+                    var path = opt && opt.getAttribute('data-path');
+                    if (path) setVal('storageRootPath', path);
+                });
             }
 
             page.addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
-                refreshFtStatus();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                     loadConfig(config);
+                    refreshDetectStatus();
                     Dashboard.hideLoadingMsg();
                 }).catch(function () {
                     Dashboard.hideLoadingMsg();

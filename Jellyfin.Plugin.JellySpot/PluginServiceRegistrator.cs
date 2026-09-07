@@ -27,6 +27,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<YouTubeMusicClient>();
         serviceCollection.AddSingleton<MatchScorer>();
         serviceCollection.AddSingleton<TrackMatcher>();
+        serviceCollection.AddSingleton<FfmpegLocator>();
         serviceCollection.AddSingleton<TrackDownloader>();
         serviceCollection.AddSingleton<LibraryStorage>();
         serviceCollection.AddSingleton<DownloadQueueService>();

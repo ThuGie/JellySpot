@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Jellyfin.Plugin.JellySpot.Models;
-using Jellyfin.Plugin.JellySpot.Services.Storage;
+using MediaBrowser.Controller.Library;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.JellySpot.Services.Storage;
@@ -9,25 +9,29 @@ namespace Jellyfin.Plugin.JellySpot.Services.Storage;
 public partial class LibraryStorage
 {
     private readonly JellySpotStore _store;
+    private readonly ILibraryManager _libraryManager;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<LibraryStorage> _logger;
 
     public LibraryStorage(
         JellySpotStore store,
+        ILibraryManager libraryManager,
         IHttpClientFactory httpClientFactory,
         ILogger<LibraryStorage> logger)
     {
         _store = store;
+        _libraryManager = libraryManager;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
     public string GetStorageRoot()
     {
-        var root = Plugin.Instance?.Configuration.StorageRootPath;
+        var root = LibraryCatalog.ResolveStorageRoot(_libraryManager, _logger);
         if (string.IsNullOrWhiteSpace(root))
         {
-            throw new InvalidOperationException("Storage root path is not configured in JellySpot admin settings.");
+            throw new InvalidOperationException(
+                "Storage root is not configured. Pick a music library or set a folder under Dashboard → JellySpot.");
         }
 
         Directory.CreateDirectory(root);

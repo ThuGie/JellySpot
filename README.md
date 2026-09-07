@@ -5,7 +5,7 @@ Single Jellyfin plugin that links Spotify accounts, browses/searchs Spotify, and
 ## Requirements
 
 - Jellyfin **10.11.x** (.NET 9)
-- **FFmpeg** on `PATH`, or set an absolute path in JellySpot admin settings
+- **FFmpeg** from Jellyfin’s own encoder (Dashboard → Playback → Transcoding), then PATH. Optional override in admin settings.
 - A [Spotify Developer](https://developer.spotify.com/dashboard) application
 - Spotify **Premium for the Spotify app owner** is required under current Spotify Development Mode rules (end-user Free accounts can still authorize for library/metadata)
 - **File Transformation** plugin — required for home-screen **Browse / Sync / Queue** tabs (same inject system as JellySeerr)
@@ -76,7 +76,7 @@ http://127.0.0.1:8096/JellySpot/OAuth/Callback
 Use your real Jellyfin base URL/port if different.
 
 3. Copy **Client ID** and **Client Secret** into **Dashboard → Plugins → JellySpot → Admin**.
-4. Set **Storage root path** to a folder that is (or will be) part of a Jellyfin music library.
+4. Pick a **Music library** (auto-detected) or set a custom storage folder. FFmpeg is taken from Jellyfin unless you override it.
 5. Each Jellyfin user opens the home **Sync** tab → **Link Spotify**, then picks Liked Songs / playlists.
 
 ## Features

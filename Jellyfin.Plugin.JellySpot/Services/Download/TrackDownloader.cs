@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.JellySpot.Models;
+using Jellyfin.Plugin.JellySpot.Services;
 using Jellyfin.Plugin.JellySpot.Services.Matching;
 using Jellyfin.Plugin.JellySpot.Services.Storage;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,7 @@ public class TrackDownloader
     private readonly TrackMatcher _matcher;
     private readonly LibraryStorage _storage;
     private readonly JellySpotStore _store;
+    private readonly FfmpegLocator _ffmpeg;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<TrackDownloader> _logger;
     private readonly YoutubeClient _youtube = new();
@@ -21,12 +23,14 @@ public class TrackDownloader
         TrackMatcher matcher,
         LibraryStorage storage,
         JellySpotStore store,
+        FfmpegLocator ffmpeg,
         IHttpClientFactory httpClientFactory,
         ILogger<TrackDownloader> logger)
     {
         _matcher = matcher;
         _storage = storage;
         _store = store;
+        _ffmpeg = ffmpeg;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
@@ -78,7 +82,7 @@ public class TrackDownloader
 
         try
         {
-            var ffmpeg = ResolveFfmpegPath();
+            var ffmpeg = _ffmpeg.EncoderPath;
             var streamManifest = await _youtube.Videos.Streams.GetManifestAsync(candidate.VideoId, ct).ConfigureAwait(false);
             var audio = streamManifest.GetAudioOnlyStreams().GetWithHighestBitrate()
                         ?? throw new InvalidOperationException("No audio streams found.");
@@ -127,17 +131,6 @@ public class TrackDownloader
             await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
             throw;
         }
-    }
-
-    private string ResolveFfmpegPath()
-    {
-        var configured = Plugin.Instance?.Configuration.FfmpegPath;
-        if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
-        {
-            return configured;
-        }
-
-        return "ffmpeg";
     }
 
     private async Task EmbedTagsAsync(string path, SpotifyTrackInfo track, CancellationToken ct)
