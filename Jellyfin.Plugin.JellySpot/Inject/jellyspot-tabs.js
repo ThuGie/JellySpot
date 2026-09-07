@@ -50,6 +50,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             if (!this._handlersBound) {
                 this._handlersBound = true;
                 log.info('init binding handlers');
+                this.bindMenuInterceptor();
             }
 
             if (!this._watchersReady) {
@@ -58,6 +59,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 this.setupNativeTabWatchers();
             }
 
+            this.ensureDrawerLinks();
             this.scheduleEnsureNativeTabs();
         },
 
@@ -374,9 +376,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
                 self.attachPluginTabGuard(tabsEl);
                 const changed = self.applyTabs(page, tabsSlider);
+                self.ensureDrawerLinks();
                 if (changed) {
                     log.info('native tab bar ready: browse, liked, sync, queue');
-                    self.ensureDrawerLinks();
                     if (typeof tabsEl.refresh === 'function') {
                         try {
                             tabsEl.refresh();
@@ -385,6 +387,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         }
                     }
                 }
+                self.openRequestedTab();
             }).catch(function (err) {
                 log.error('failed to ensure native tabs', err);
             }).then(function () {
@@ -404,11 +407,110 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             return self._tabsEnsuring;
         },
 
+        requestedTab: function () {
+            const hash = String(window.location.hash || '');
+            const query = hash.indexOf('?') >= 0 ? hash.slice(hash.indexOf('?') + 1) : '';
+            const fromHash = new URLSearchParams(query).get('tab');
+            const fromStore = sessionStorage.getItem('jellyspotOpenTab');
+            const tab = fromHash || fromStore;
+            return tab && this.TAB_DEFS[tab] ? tab : null;
+        },
+
+        openRequestedTab: function () {
+            const tab = this.requestedTab();
+            if (!tab) {
+                return;
+            }
+            const button = document.querySelector('.headerTabs [data-jellyspot-tab="' + tab + '"]');
+            if (!button) {
+                return;
+            }
+            sessionStorage.removeItem('jellyspotOpenTab');
+            this.showPluginTab(tab);
+            if (typeof button.click === 'function') {
+                button.click();
+            }
+        },
+
+        openUserUi: function (tab) {
+            const id = this.TAB_DEFS[tab] ? tab : 'browse';
+            sessionStorage.setItem('jellyspotOpenTab', id);
+            if (this.isHomeHash()) {
+                this.ensureNativeTabs().then(() => this.openRequestedTab());
+                return;
+            }
+            window.location.hash = '#/home?tab=' + encodeURIComponent(id);
+        },
+
+        isDashboardContext: function () {
+            const hash = String(window.location.hash || '').toLowerCase();
+            if (hash.indexOf('/dashboard') >= 0) {
+                return true;
+            }
+            const page = document.querySelector('.page:not(.hide)');
+            return !!(page && (
+                page.classList.contains('type-interior') ||
+                page.classList.contains('dashboardDocument')
+            ));
+        },
+
+        isJellySpotMenuHref: function (href) {
+            const value = String(href || '').toLowerCase();
+            return value.indexOf('name=jellyspot') >= 0 ||
+                (value.indexOf('configurationpage') >= 0 && value.indexOf('jellyspot') >= 0);
+        },
+
+        rewriteOfficialMenuLinks: function () {
+            const self = this;
+            document.querySelectorAll('a[href*="name=JellySpot"], a[href*="name=jellyspot"]').forEach(function (link) {
+                if (self.isDashboardContext() && link.closest('.type-interior, .dashboardDocument, #dashboardPage')) {
+                    return;
+                }
+                link.setAttribute('href', '#/home?tab=browse');
+                link.setAttribute('data-jellyspot-rewritten', '1');
+            });
+        },
+
+        bindMenuInterceptor: function () {
+            if (this._menuInterceptorBound) {
+                return;
+            }
+            this._menuInterceptorBound = true;
+            const self = this;
+            document.addEventListener('click', function (event) {
+                const link = event.target && event.target.closest
+                    ? event.target.closest('a, button')
+                    : null;
+                if (!link) {
+                    return;
+                }
+                if (link.getAttribute && link.getAttribute('data-jellyspot-tab')) {
+                    return;
+                }
+                const href = link.getAttribute('href') || link.getAttribute('to') || '';
+                const shouldOpenUserUi = link.id === 'jellyspot-drawer-browse' ||
+                    link.getAttribute('data-jellyspot-rewritten') === '1' ||
+                    (self.isJellySpotMenuHref(href) && !self.isDashboardContext());
+                if (!shouldOpenUserUi) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                self.openUserUi('browse');
+            }, true);
+            if (document.body) {
+                new MutationObserver(function () {
+                    self.ensureDrawerLinks();
+                }).observe(document.body, { childList: true, subtree: true });
+            }
+        },
+
         setupNativeTabWatchers: function () {
             const self = this;
             log.info('native tab watchers ready');
 
             document.addEventListener('viewshow', function (event) {
+                self.ensureDrawerLinks();
                 if (self.isHomeViewEvent(event) || self.isHomeHash()) {
                     self.scheduleEnsureNativeTabs();
                     return;
@@ -638,8 +740,10 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         },
 
         ensureDrawerLinks: function () {
-            const drawer = document.querySelector('.mainDrawer-scrollContainer, .navMenuOption, .navDrawer');
-            const host = document.querySelector('.mainDrawer-scrollContainer') || document.querySelector('.navDrawer');
+            this.rewriteOfficialMenuLinks();
+            const host = document.querySelector('.mainDrawer-scrollContainer') ||
+                document.querySelector('.navDrawer') ||
+                document.querySelector('.mainDrawer');
             if (!host || document.getElementById('jellyspot-drawer-browse')) {
                 return;
             }
@@ -648,24 +752,14 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const btn = document.createElement('a');
             btn.id = 'jellyspot-drawer-browse';
             btn.className = 'navMenuOption emby-button';
-            btn.href = '#/home';
+            btn.href = '#/home?tab=browse';
             btn.innerHTML = '<span class="material-icons navMenuOptionIcon music_note" aria-hidden="true"></span><span class="navMenuOptionText">JellySpot</span>';
             btn.addEventListener('click', function (e) {
                 e.preventDefault();
-                if (window.location.hash.indexOf('home') < 0) {
-                    window.location.hash = '#/home';
-                }
-                setTimeout(function () {
-                    const tab = document.querySelector('.headerTabs [data-jellyspot-tab="browse"]');
-                    if (tab) {
-                        tab.click();
-                    }
-                }, 400);
+                e.stopPropagation();
+                self.openUserUi('browse');
             });
             host.appendChild(btn);
-            if (!drawer) {
-                return;
-            }
         },
 
         loadPlaylists: function (root) {

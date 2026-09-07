@@ -27,14 +27,14 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasPluginConfiguration, 
 
     public IEnumerable<PluginPageInfo> GetPages()
     {
-        // IMPORTANT: Only ONE EnableInMainMenu page per plugin.
-        // Jellyfin web uses PluginId as the React list key in PluginDrawerSection,
-        // so multiple EnableInMainMenu pages from the same plugin do not appear.
+        // Keep this off the user drawer. EnableInMainMenu points at a Dashboard
+        // configuration page, which redirects non-admins to Home. Users open
+        // Browse from the injected Home tabs / drawer link instead.
         yield return new PluginPageInfo
         {
             Name = Name,
             DisplayName = "JellySpot",
-            EnableInMainMenu = true,
+            EnableInMainMenu = false,
             MenuIcon = "music_note",
             EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.config.html"
         };

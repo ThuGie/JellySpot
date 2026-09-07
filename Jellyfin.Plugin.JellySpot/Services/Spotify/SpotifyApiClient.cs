@@ -86,20 +86,12 @@ public class SpotifyApiClient
         var playlist = ParsePlaylist(metaDoc.RootElement);
         var tracks = new List<SpotifyTrackInfo>();
 
-        // Prefer items endpoint for owned playlists; fall back to tracks for compatibility.
         var offset = 0;
         while (true)
         {
-            var path = $"/playlists/{playlistId}/items?limit=50&offset={offset}";
-            var json = await GetStringAsync(userId, path, $"playlist-items:{playlistId}:{offset}", TimeSpan.FromHours(12), ct)
+            var path = $"/playlists/{playlistId}/tracks?limit=50&offset={offset}";
+            var json = await GetStringAsync(userId, path, $"playlist-tracks:{playlistId}:{offset}", TimeSpan.FromHours(12), ct)
                 .ConfigureAwait(false);
-
-            if (json == null)
-            {
-                path = $"/playlists/{playlistId}/tracks?limit=50&offset={offset}";
-                json = await GetStringAsync(userId, path, $"playlist-tracks:{playlistId}:{offset}", TimeSpan.FromHours(12), ct)
-                    .ConfigureAwait(false);
-            }
 
             if (json == null)
             {
@@ -333,6 +325,12 @@ public class SpotifyApiClient
 
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
+                return null;
+            }
+
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                _logger.LogInformation("Spotify API {Path} is not readable (403); skipping", relativePath);
                 return null;
             }
 

@@ -20,9 +20,9 @@ After install + **restart Jellyfin**, open the **Home** screen. Next to Home / F
 | **Sync** | Link Spotify, liked songs, monitored playlists |
 | **Queue** | Download status and rematch |
 
-Admin credentials stay under **Dashboard → Plugins → JellySpot**.
+The side-menu **JellySpot** item opens **Home → Browse** for every user. Admin credentials stay under **Dashboard → Plugins → JellySpot**.
 
-If home tabs are missing: install **File Transformation**, confirm JellySpot is **Active** at **1.0.4.0+**, then restart and hard-refresh the web UI.
+If home tabs are missing: install **File Transformation**, confirm JellySpot is **Active** at **1.0.8.0+**, then restart and hard-refresh the web UI.
 
 ## Icon
 
