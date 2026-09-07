@@ -919,6 +919,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     '<option value="Failed">Failed</option>' +
                     '</select></div>' +
                     '<button is="emby-button" type="button" class="raised jellyspot-queue-refresh"><span>Refresh</span></button>' +
+                    '<button is="emby-button" type="button" class="raised button-submit jellyspot-queue-retry-failed"><span>Retry failed</span></button>' +
                     '</div>' +
                     '<table class="detailTable jellyspot-queue-table"><thead><tr>' +
                     '<th>Track</th><th>Status</th><th>Score</th><th>Details</th><th></th>' +
@@ -926,6 +927,14 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
                 root.querySelector('.jellyspot-queue-refresh').addEventListener('click', function () {
                     self.loadQueue(root);
+                });
+                root.querySelector('.jellyspot-queue-retry-failed').addEventListener('click', function () {
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('JellySpot/Queue/RetryFailed')
+                    }).then(function () {
+                        self.loadQueue(root);
+                    });
                 });
                 root.querySelector('.jellyspot-queue-filter').addEventListener('change', function () {
                     self.loadQueue(root);
@@ -955,6 +964,22 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         '<td>' + (score != null ? Number(score).toFixed(1) : '-') + '</td>' +
                         '<td>' + self.escapeHtml(String(detail)) + '</td>' +
                         '<td></td>';
+                    if (st === 'Failed') {
+                        const retry = document.createElement('button');
+                        retry.setAttribute('is', 'emby-button');
+                        retry.className = 'raised button-submit';
+                        retry.type = 'button';
+                        retry.innerHTML = '<span>Retry</span>';
+                        retry.addEventListener('click', function () {
+                            ApiClient.ajax({
+                                type: 'POST',
+                                url: ApiClient.getUrl('JellySpot/Queue/' + id + '/Retry')
+                            }).then(function () {
+                                self.loadQueue(root);
+                            });
+                        });
+                        tr.children[4].appendChild(retry);
+                    }
                     if (st === 'Failed' || st === 'Completed') {
                         const btn = document.createElement('button');
                         btn.setAttribute('is', 'emby-button');

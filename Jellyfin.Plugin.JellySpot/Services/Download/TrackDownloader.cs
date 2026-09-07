@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http;
 using Jellyfin.Plugin.JellySpot.Models;
 using Jellyfin.Plugin.JellySpot.Services;
 using Jellyfin.Plugin.JellySpot.Services.Matching;
@@ -82,26 +84,7 @@ public class TrackDownloader
 
         try
         {
-            var ffmpeg = _ffmpeg.EncoderPath;
-            var streamManifest = await _youtube.Videos.Streams.GetManifestAsync(candidate.VideoId, ct).ConfigureAwait(false);
-            var audio = streamManifest.GetAudioOnlyStreams().GetWithHighestBitrate()
-                        ?? throw new InvalidOperationException("No audio streams found.");
-
-            if (string.Equals(format, "m4a", StringComparison.OrdinalIgnoreCase) &&
-                audio.Container == Container.Mp4)
-            {
-                await _youtube.Videos.Streams.DownloadAsync(audio, absolute, cancellationToken: ct).ConfigureAwait(false);
-            }
-            else
-            {
-                await _youtube.Videos.DownloadAsync(
-                    candidate.VideoId,
-                    absolute,
-                    o => o
-                        .SetFFmpegPath(ffmpeg)
-                        .SetContainer(format),
-                    cancellationToken: ct).ConfigureAwait(false);
-            }
+            await DownloadAudioAsync(candidate.VideoId, absolute, format, ct).ConfigureAwait(false);
 
             await EmbedTagsAsync(absolute, track, ct).ConfigureAwait(false);
             await _storage.SaveCoverAsync(Path.GetDirectoryName(absolute)!, track.CoverUrl, ct).ConfigureAwait(false);
@@ -131,6 +114,70 @@ public class TrackDownloader
             await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
             throw;
         }
+    }
+
+    private async Task DownloadAudioAsync(string videoId, string absolute, string format, CancellationToken ct)
+    {
+        var ffmpeg = _ffmpeg.EncoderPath;
+        var streamManifest = await _youtube.Videos.Streams.GetManifestAsync(videoId, ct).ConfigureAwait(false);
+        var audios = streamManifest.GetAudioOnlyStreams()
+            .OrderByDescending(s =>
+                string.Equals(format, "m4a", StringComparison.OrdinalIgnoreCase) && s.Container == Container.Mp4)
+            .ThenByDescending(s => s.Bitrate)
+            .ToList();
+        if (audios.Count == 0)
+        {
+            throw new InvalidOperationException("No audio streams found.");
+        }
+
+        Exception? lastForbidden = null;
+        foreach (var audio in audios)
+        {
+            try
+            {
+                if (string.Equals(format, "m4a", StringComparison.OrdinalIgnoreCase) &&
+                    audio.Container == Container.Mp4)
+                {
+                    await _youtube.Videos.Streams.DownloadAsync(audio, absolute, cancellationToken: ct).ConfigureAwait(false);
+                    return;
+                }
+
+                await _youtube.Videos.DownloadAsync(
+                    videoId,
+                    absolute,
+                    o => o
+                        .SetFFmpegPath(ffmpeg)
+                        .SetContainer(format),
+                    cancellationToken: ct).ConfigureAwait(false);
+                return;
+            }
+            catch (HttpRequestException ex) when (IsForbidden(ex))
+            {
+                lastForbidden = ex;
+                _logger.LogWarning("YouTube returned 403 for {VideoId} ({Container}); trying next stream", videoId, audio.Container);
+            }
+        }
+
+        try
+        {
+            await _youtube.Videos.DownloadAsync(
+                videoId,
+                absolute,
+                o => o
+                    .SetFFmpegPath(ffmpeg)
+                    .SetContainer(format),
+                cancellationToken: ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex) when (IsForbidden(ex))
+        {
+            throw lastForbidden ?? ex;
+        }
+    }
+
+    private static bool IsForbidden(HttpRequestException ex)
+    {
+        return ex.StatusCode == HttpStatusCode.Forbidden ||
+               ex.Message.Contains("403", StringComparison.Ordinal);
     }
 
     private async Task EmbedTagsAsync(string path, SpotifyTrackInfo track, CancellationToken ct)

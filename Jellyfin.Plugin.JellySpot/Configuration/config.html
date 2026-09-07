@@ -158,6 +158,7 @@
                         </select>
                     </div>
                     <button is="emby-button" type="button" class="raised" id="jellyspotQueueRefresh"><span>Refresh</span></button>
+                    <button is="emby-button" type="button" class="raised button-submit" id="jellyspotQueueRetryFailed"><span>Retry failed</span></button>
                 </div>
                 <table class="detailTable" style="width:100%;">
                     <thead>
@@ -517,6 +518,20 @@
                             '<td>' + (score != null ? Number(score).toFixed(1) : '-') + '</td>' +
                             '<td>' + detail + '</td>' +
                             '<td></td>';
+                        if (st === 'Failed') {
+                            var retry = document.createElement('button');
+                            retry.setAttribute('is', 'emby-button');
+                            retry.className = 'raised button-submit';
+                            retry.type = 'button';
+                            retry.innerHTML = '<span>Retry</span>';
+                            retry.addEventListener('click', function () {
+                                ApiClient.ajax({
+                                    type: 'POST',
+                                    url: ApiClient.getUrl('JellySpot/Queue/' + id + '/Retry')
+                                }).then(loadQueue);
+                            });
+                            tr.children[4].appendChild(retry);
+                        }
                         if (st === 'Failed' || st === 'Completed') {
                             var btn = document.createElement('button');
                             btn.setAttribute('is', 'emby-button');
@@ -541,6 +556,12 @@
             }
 
             page.querySelector('#jellyspotQueueRefresh').addEventListener('click', loadQueue);
+            page.querySelector('#jellyspotQueueRetryFailed').addEventListener('click', function () {
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('JellySpot/Queue/RetryFailed')
+                }).then(loadQueue);
+            });
             page.querySelector('#jellyspotQueueFilter').addEventListener('change', loadQueue);
 
             function firstLocation(lib) {

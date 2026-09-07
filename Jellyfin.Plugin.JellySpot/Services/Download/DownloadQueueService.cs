@@ -75,6 +75,38 @@ public class DownloadQueueService
         EnsureWorker();
     }
 
+    public async Task RetryAsync(string queueItemId, CancellationToken ct = default)
+    {
+        var item = await _store.GetQueueItemAsync(queueItemId, ct).ConfigureAwait(false);
+        if (item == null)
+        {
+            return;
+        }
+
+        item.Status = "Pending";
+        item.Error = null;
+        await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
+        EnsureWorker();
+    }
+
+    public async Task<int> RetryFailedAsync(CancellationToken ct = default)
+    {
+        var failed = await _store.GetQueueAsync("Failed", 500, ct).ConfigureAwait(false);
+        foreach (var item in failed)
+        {
+            item.Status = "Pending";
+            item.Error = null;
+            await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
+        }
+
+        if (failed.Count > 0)
+        {
+            EnsureWorker();
+        }
+
+        return failed.Count;
+    }
+
     private async Task ProcessLoopAsync(CancellationToken ct)
     {
         if (!await _workerLock.WaitAsync(0, ct).ConfigureAwait(false))

@@ -402,6 +402,22 @@ public class JellySpotController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("Queue/{id}/Retry")]
+    [Authorize]
+    public async Task<ActionResult> Retry(string id, CancellationToken ct)
+    {
+        await _queue.RetryAsync(id, ct).ConfigureAwait(false);
+        return NoContent();
+    }
+
+    [HttpPost("Queue/RetryFailed")]
+    [Authorize]
+    public async Task<ActionResult> RetryFailed(CancellationToken ct)
+    {
+        var count = await _queue.RetryFailedAsync(ct).ConfigureAwait(false);
+        return Ok(new { Retried = count });
+    }
+
     [HttpPost("Sync/Now")]
     [Authorize]
     public async Task<ActionResult> SyncNow(CancellationToken ct)
