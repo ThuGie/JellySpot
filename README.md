@@ -8,19 +8,21 @@ Single Jellyfin plugin that links Spotify accounts, browses/searchs Spotify, and
 - **FFmpeg** on `PATH`, or set an absolute path in JellySpot admin settings
 - A [Spotify Developer](https://developer.spotify.com/dashboard) application
 - Spotify **Premium for the Spotify app owner** is required under current Spotify Development Mode rules (end-user Free accounts can still authorize for library/metadata)
+- Optional: **File Transformation** plugin — adds a music-note header button that opens JellySpot (same dependency pattern as JellySeerr). Not required for Dashboard access.
 
 ## Where to find settings
 
-After install + restart, open the **Dashboard** sidebar:
+Settings are **not** on the home library screen. After install + **restart Jellyfin**:
 
-| Menu item | Purpose |
-|---|---|
-| **JellySpot** | Admin: storage path, Spotify Client ID/Secret, limits |
-| **JellySpot Sync** | Per-user: link Spotify, liked songs, monitored playlists |
-| **JellySpot Browse** | Search Spotify / playlists and queue downloads |
-| **JellySpot Queue** | Download status and rematch |
+1. Open the **Dashboard** (gear / admin)
+2. In the left sidebar under **Plugins**, click **JellySpot**
+3. Or: **Dashboard → Plugins → JellySpot → Settings**
 
-Also: **Dashboard → Plugins → JellySpot** opens the same admin page.
+That one page has tabs: **Admin** | **Sync** | **Browse** | **Queue**.
+
+Direct URL path: `/web/configurationpage?name=JellySpot`
+
+If you still see nothing: confirm the plugin shows as **Active** under Plugins (not NotSupported), and that version is **1.0.3.0+**.
 
 ## Icon
 
@@ -73,9 +75,9 @@ http://127.0.0.1:8096/JellySpot/OAuth/Callback
 
 Use your real Jellyfin base URL/port if different.
 
-3. Copy **Client ID** and **Client Secret** into **Dashboard → Plugins → JellySpot**.
+3. Copy **Client ID** and **Client Secret** into **Dashboard → Plugins → JellySpot → Admin**.
 4. Set **Storage root path** to a folder that is (or will be) part of a Jellyfin music library.
-5. Each Jellyfin user opens **JellySpot Sync** → **Link Spotify**, then picks Liked Songs / playlists.
+5. Each Jellyfin user opens **JellySpot → Sync** → **Link Spotify**, then picks Liked Songs / playlists.
 
 ## Features
 

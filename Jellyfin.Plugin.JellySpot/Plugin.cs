@@ -27,42 +27,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasPluginConfiguration, 
 
     public IEnumerable<PluginPageInfo> GetPages()
     {
-        var prefix = GetType().Namespace;
-
+        // IMPORTANT: Only ONE EnableInMainMenu page per plugin.
+        // Jellyfin web uses PluginId as the React list key in PluginDrawerSection,
+        // so multiple EnableInMainMenu pages from the same plugin do not appear.
         yield return new PluginPageInfo
         {
             Name = Name,
             DisplayName = "JellySpot",
             EnableInMainMenu = true,
             MenuIcon = "music_note",
-            EmbeddedResourcePath = $"{prefix}.Configuration.config.html"
-        };
-
-        yield return new PluginPageInfo
-        {
-            Name = "JellySpotSync",
-            DisplayName = "JellySpot Sync",
-            EnableInMainMenu = true,
-            MenuIcon = "sync",
-            EmbeddedResourcePath = $"{prefix}.Configuration.sync.html"
-        };
-
-        yield return new PluginPageInfo
-        {
-            Name = "JellySpotBrowse",
-            DisplayName = "JellySpot Browse",
-            EnableInMainMenu = true,
-            MenuIcon = "search",
-            EmbeddedResourcePath = $"{prefix}.Configuration.browse.html"
-        };
-
-        yield return new PluginPageInfo
-        {
-            Name = "JellySpotQueue",
-            DisplayName = "JellySpot Queue",
-            EnableInMainMenu = true,
-            MenuIcon = "playlist_play",
-            EmbeddedResourcePath = $"{prefix}.Configuration.queue.html"
+            EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.config.html"
         };
     }
 

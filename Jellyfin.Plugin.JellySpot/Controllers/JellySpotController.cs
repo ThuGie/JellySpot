@@ -43,6 +43,21 @@ public class JellySpotController : ControllerBase
         _logger = logger;
     }
 
+    [HttpGet("jellyspot-nav.js")]
+    [AllowAnonymous]
+    public ActionResult GetNavScript()
+    {
+        var assembly = typeof(Plugin).Assembly;
+        var name = $"{typeof(Plugin).Namespace}.Inject.jellyspot-nav.js";
+        var stream = assembly.GetManifestResourceStream(name);
+        if (stream == null)
+        {
+            return NotFound();
+        }
+
+        return File(stream, "application/javascript");
+    }
+
     [HttpGet("Configuration")]
     [Authorize(Policy = "RequiresElevation")]
     public ActionResult<PluginConfiguration> GetConfiguration()

@@ -30,5 +30,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<DownloadQueueService>();
         serviceCollection.AddSingleton<SyncEngine>();
         serviceCollection.AddSingleton<IScheduledTask, SyncScheduledTask>();
+        serviceCollection.AddSingleton<IScheduledTask, StartupService>();
     }
 }

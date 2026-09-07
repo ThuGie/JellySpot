@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <Version>1.0.2.0</Version>
+    <Version>1.0.3.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +22,9 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
     <PackageReference Include="YoutubeExplode" Version="6.5.6" />
     <PackageReference Include="YoutubeExplode.Converter" Version="6.5.6" />
@@ -34,9 +37,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Configuration\config.html" />
-    <EmbeddedResource Include="Configuration\sync.html" />
-    <EmbeddedResource Include="Configuration\browse.html" />
-    <EmbeddedResource Include="Configuration\queue.html" />
+    <EmbeddedResource Include="Inject\jellyspot-nav.js" />
   </ItemGroup>
 
 </Project>
