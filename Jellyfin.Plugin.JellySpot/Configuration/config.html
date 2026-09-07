@@ -1,0 +1,153 @@
+<div id="jellySpotConfigurationPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input,emby-checkbox,emby-select">
+    <div data-role="content">
+        <div class="content-primary">
+            <form class="jellySpotConfigurationForm">
+                <div class="sectionTitleContainer">
+                    <h2 class="sectionTitle">JellySpot</h2>
+                </div>
+                <p>Admin settings: storage path, Spotify app credentials, and download limits. Users link Spotify under <strong>JellySpot Sync</strong>.</p>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Storage</h3>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="storageRootPath" label="Storage root path" />
+                        <div class="fieldDescription">Folder where downloads are saved. Point a Jellyfin music library at this path.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="ffmpegPath" label="FFmpeg path (optional)" />
+                        <div class="fieldDescription">Leave empty to use ffmpeg from PATH / Jellyfin.</div>
+                    </div>
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="triggerLibraryRefresh" />
+                        <span>Trigger Jellyfin library refresh after sync</span>
+                    </label>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Spotify app</h3>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="spotifyClientId" label="Spotify Client ID" />
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="password" id="spotifyClientSecret" label="Spotify Client Secret" />
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="spotifyRedirectUri" label="OAuth redirect URI" />
+                        <div class="fieldDescription">Must match the Spotify Developer Dashboard. Example: http://127.0.0.1:8096/JellySpot/OAuth/Callback</div>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Limits</h3>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" id="spotifyRequestsPerSecond" label="Spotify requests / second" />
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" id="downloadConcurrency" label="Download concurrency" />
+                    </div>
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="preferredFormat">Preferred format</label>
+                        <select is="emby-select" id="preferredFormat" class="emby-select-withcolor">
+                            <option value="m4a">m4a</option>
+                            <option value="mp3">mp3</option>
+                            <option value="opus">opus</option>
+                            <option value="ogg">ogg</option>
+                        </select>
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" id="minMatchScore" label="Minimum match score" />
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" id="syncIntervalMinutes" label="Sync interval (minutes)" />
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" id="cacheTtlDays" label="Spotify cache TTL (days)" />
+                    </div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+        (function () {
+            var pluginId = 'a7c3e8f1-9b2d-4e5a-8f6c-1d2e3f4a5b6c';
+            var page = document.getElementById('jellySpotConfigurationPage');
+
+            function $(id) { return page.querySelector('#' + id); }
+            function val(id) { return ($(id) && $(id).value) || ''; }
+            function setVal(id, value) { var el = $(id); if (el) el.value = value == null ? '' : value; }
+            function checked(id) { return !!( $(id) && $(id).checked ); }
+            function setChecked(id, value) { var el = $(id); if (el) el.checked = !!value; }
+            function pick(obj) {
+                if (!obj) return undefined;
+                for (var i = 1; i < arguments.length; i++) {
+                    if (obj[arguments[i]] !== undefined) return obj[arguments[i]];
+                }
+                return undefined;
+            }
+
+            function loadConfig(config) {
+                setVal('storageRootPath', pick(config, 'StorageRootPath', 'storageRootPath') || '');
+                setVal('spotifyClientId', pick(config, 'SpotifyClientId', 'spotifyClientId') || '');
+                setVal('spotifyClientSecret', pick(config, 'SpotifyClientSecret', 'spotifyClientSecret') || '');
+                setVal('spotifyRedirectUri', pick(config, 'SpotifyRedirectUri', 'spotifyRedirectUri') || 'http://127.0.0.1:8096/JellySpot/OAuth/Callback');
+                setVal('spotifyRequestsPerSecond', pick(config, 'SpotifyRequestsPerSecond', 'spotifyRequestsPerSecond') ?? 2);
+                setVal('downloadConcurrency', pick(config, 'DownloadConcurrency', 'downloadConcurrency') ?? 2);
+                setVal('preferredFormat', pick(config, 'PreferredFormat', 'preferredFormat') || 'm4a');
+                setVal('minMatchScore', pick(config, 'MinMatchScore', 'minMatchScore') ?? 80);
+                setVal('syncIntervalMinutes', pick(config, 'SyncIntervalMinutes', 'syncIntervalMinutes') ?? 60);
+                setVal('cacheTtlDays', pick(config, 'CacheTtlDays', 'cacheTtlDays') ?? 10);
+                setVal('ffmpegPath', pick(config, 'FfmpegPath', 'ffmpegPath') || '');
+                setChecked('triggerLibraryRefresh', pick(config, 'TriggerLibraryRefresh', 'triggerLibraryRefresh') !== false);
+            }
+
+            function readConfig(config) {
+                config.StorageRootPath = val('storageRootPath').trim();
+                config.SpotifyClientId = val('spotifyClientId').trim();
+                config.SpotifyClientSecret = val('spotifyClientSecret').trim();
+                config.SpotifyRedirectUri = val('spotifyRedirectUri').trim();
+                config.SpotifyRequestsPerSecond = parseFloat(val('spotifyRequestsPerSecond')) || 2;
+                config.SpotifyMaxConcurrentRequests = 2;
+                config.DownloadConcurrency = parseInt(val('downloadConcurrency'), 10) || 2;
+                config.PreferredFormat = val('preferredFormat') || 'm4a';
+                config.MinMatchScore = parseFloat(val('minMatchScore')) || 80;
+                config.SyncIntervalMinutes = parseInt(val('syncIntervalMinutes'), 10) || 60;
+                config.CacheTtlDays = parseInt(val('cacheTtlDays'), 10) || 10;
+                config.FfmpegPath = val('ffmpegPath').trim();
+                config.TriggerLibraryRefresh = checked('triggerLibraryRefresh');
+                return config;
+            }
+
+            page.querySelector('.jellySpotConfigurationForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    readConfig(config);
+                    return ApiClient.updatePluginConfiguration(pluginId, config);
+                }).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                    Dashboard.hideLoadingMsg();
+                }).catch(function () {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Failed to save JellySpot settings');
+                });
+            });
+
+            page.addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    loadConfig(config);
+                    Dashboard.hideLoadingMsg();
+                }).catch(function () {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Failed to load JellySpot settings');
+                });
+            });
+        })();
+    </script>
+</div>

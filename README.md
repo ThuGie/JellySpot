@@ -9,6 +9,19 @@ Single Jellyfin plugin that links Spotify accounts, browses/searchs Spotify, and
 - A [Spotify Developer](https://developer.spotify.com/dashboard) application
 - Spotify **Premium for the Spotify app owner** is required under current Spotify Development Mode rules (end-user Free accounts can still authorize for library/metadata)
 
+## Where to find settings
+
+After install + restart, open the **Dashboard** sidebar:
+
+| Menu item | Purpose |
+|---|---|
+| **JellySpot** | Admin: storage path, Spotify Client ID/Secret, limits |
+| **JellySpot Sync** | Per-user: link Spotify, liked songs, monitored playlists |
+| **JellySpot Browse** | Search Spotify / playlists and queue downloads |
+| **JellySpot Queue** | Download status and rematch |
+
+Also: **Dashboard → Plugins → JellySpot** opens the same admin page.
+
 ## Icon
 
 Catalog image follows the official Jellyfin UX plugin size **1920×1080** (`assets/jellyspot.png`).

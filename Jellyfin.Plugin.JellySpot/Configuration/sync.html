@@ -1,0 +1,159 @@
+<div id="jellySpotSyncPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <div class="sectionTitleContainer">
+                <h2 class="sectionTitle">JellySpot Sync</h2>
+            </div>
+            <p>Link your Spotify account and choose what to keep mirrored. Admin credentials are set under <strong>JellySpot</strong>.</p>
+
+            <div class="verticalSection">
+                <div id="jellyspotLinkStatus" class="fieldDescription">Checking link status…</div>
+                <div style="display:flex;gap:.5em;flex-wrap:wrap;margin:.75em 0;">
+                    <button is="emby-button" type="button" class="raised button-submit" id="jellyspotLinkBtn"><span>Link Spotify</span></button>
+                    <button is="emby-button" type="button" class="raised" id="jellyspotUnlinkBtn"><span>Unlink</span></button>
+                    <button is="emby-button" type="button" class="raised" id="jellyspotSyncNowBtn"><span>Sync now</span></button>
+                </div>
+            </div>
+
+            <div class="verticalSection">
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="jellyspotEnabled" />
+                    <span>Enable automatic sync for my account</span>
+                </label>
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="jellyspotLiked" />
+                    <span>Sync Liked Songs</span>
+                </label>
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="jellyspotInclude" label="Include artist filters (comma separated)" />
+                </div>
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="jellyspotExclude" label="Exclude artist filters (comma separated)" />
+                </div>
+                <h3 class="sectionTitle">Monitored playlists</h3>
+                <div id="jellyspotMonitoredPlaylists"></div>
+                <button is="emby-button" type="button" class="raised button-submit" id="jellyspotSaveSettingsBtn"><span>Save settings</span></button>
+                <div id="jellyspotSyncMeta" class="fieldDescription" style="margin-top:.75em;"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        (function () {
+            var page = document.getElementById('jellySpotSyncPage');
+
+            function splitCsv(value) {
+                return (value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+            }
+
+            function pick(obj) {
+                if (!obj) return undefined;
+                for (var i = 1; i < arguments.length; i++) {
+                    if (obj[arguments[i]] !== undefined) return obj[arguments[i]];
+                }
+                return undefined;
+            }
+
+            function load() {
+                Dashboard.showLoadingMsg();
+                Promise.all([
+                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Me'), dataType: 'json' }),
+                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists'), dataType: 'json' }).catch(function () { return []; })
+                ]).then(function (results) {
+                    var me = results[0] || {};
+                    var playlists = results[1] || [];
+                    var settings = pick(me, 'Settings', 'settings') || {};
+                    var linked = pick(me, 'Linked', 'linked') === true;
+                    page.querySelector('#jellyspotLinkStatus').textContent = linked
+                        ? ('Linked as ' + (pick(me, 'SpotifyDisplayName', 'spotifyDisplayName') || pick(me, 'SpotifyUserId', 'spotifyUserId') || 'Spotify user'))
+                        : 'Spotify is not linked';
+                    page.querySelector('#jellyspotEnabled').checked = pick(settings, 'Enabled', 'enabled') !== false;
+                    page.querySelector('#jellyspotLiked').checked = !!pick(settings, 'SyncLikedSongs', 'syncLikedSongs');
+                    page.querySelector('#jellyspotInclude').value = (pick(settings, 'IncludeArtistFilters', 'includeArtistFilters') || []).join(', ');
+                    page.querySelector('#jellyspotExclude').value = (pick(settings, 'ExcludeArtistFilters', 'excludeArtistFilters') || []).join(', ');
+                    page.querySelector('#jellyspotSyncMeta').textContent =
+                        'Last sync: ' + (pick(settings, 'LastSyncUtc', 'lastSyncUtc') || 'never') +
+                        (pick(settings, 'LastSyncStatus', 'lastSyncStatus') ? ' (' + pick(settings, 'LastSyncStatus', 'lastSyncStatus') + ')' : '') +
+                        (pick(settings, 'LastError', 'lastError') ? ' — ' + pick(settings, 'LastError', 'lastError') : '');
+
+                    var box = page.querySelector('#jellyspotMonitoredPlaylists');
+                    box.innerHTML = '';
+                    var monitored = pick(settings, 'MonitoredPlaylistIds', 'monitoredPlaylistIds') || [];
+                    playlists.forEach(function (p) {
+                        var id = pick(p, 'Id', 'id');
+                        var name = pick(p, 'Name', 'name') || id;
+                        var label = document.createElement('label');
+                        label.className = 'checkboxContainer';
+                        label.style.display = 'block';
+                        var checked = monitored.indexOf(id) >= 0 ? 'checked' : '';
+                        label.innerHTML = '<input type="checkbox" data-playlist-id="' + id + '" ' + checked + ' /> <span>' + name + '</span>';
+                        box.appendChild(label);
+                    });
+                    Dashboard.hideLoadingMsg();
+                }).catch(function (err) {
+                    Dashboard.hideLoadingMsg();
+                    page.querySelector('#jellyspotLinkStatus').textContent =
+                        'Unable to load status. Set Spotify Client ID under Dashboard → JellySpot first. ' + (err && err.message ? err.message : '');
+                });
+            }
+
+            page.querySelector('#jellyspotLinkBtn').addEventListener('click', function () {
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/OAuth/Start'), dataType: 'json' })
+                    .then(function (res) {
+                        window.open(pick(res, 'Url', 'url'), '_blank', 'noopener');
+                        Dashboard.alert('Complete linking in the Spotify window, then reopen this page.');
+                    })
+                    .catch(function () {
+                        Dashboard.alert('Could not start OAuth. Configure Client ID / redirect URI under JellySpot admin settings.');
+                    });
+            });
+
+            page.querySelector('#jellyspotUnlinkBtn').addEventListener('click', function () {
+                ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellySpot/OAuth/Unlink') }).then(load);
+            });
+
+            page.querySelector('#jellyspotSyncNowBtn').addEventListener('click', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellySpot/Sync/Now') })
+                    .then(function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Sync started. Check JellySpot Queue for progress.');
+                        load();
+                    })
+                    .catch(function (err) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert((err && err.message) || 'Sync failed');
+                    });
+            });
+
+            page.querySelector('#jellyspotSaveSettingsBtn').addEventListener('click', function () {
+                var playlistIds = [];
+                page.querySelectorAll('#jellyspotMonitoredPlaylists input[type=checkbox]').forEach(function (cb) {
+                    if (cb.checked) playlistIds.push(cb.getAttribute('data-playlist-id'));
+                });
+                var body = {
+                    Enabled: page.querySelector('#jellyspotEnabled').checked,
+                    SyncLikedSongs: page.querySelector('#jellyspotLiked').checked,
+                    PlaylistIds: playlistIds,
+                    IncludeArtistFilters: splitCsv(page.querySelector('#jellyspotInclude').value),
+                    ExcludeArtistFilters: splitCsv(page.querySelector('#jellyspotExclude').value)
+                };
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('JellySpot/Settings'),
+                    data: JSON.stringify(body),
+                    contentType: 'application/json'
+                }).then(function () {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Settings saved');
+                    load();
+                }).catch(function () {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Failed to save');
+                });
+            });
+
+            page.addEventListener('pageshow', load);
+        })();
+    </script>
+</div>

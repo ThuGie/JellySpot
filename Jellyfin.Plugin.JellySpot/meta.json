@@ -1,14 +1,14 @@
 {
-  "category": "Music",
-  "guid": "a7c3e8f1-9b2d-4e5a-8f6c-1d2e3f4a5b6c",
-  "name": "JellySpot",
-  "description": "Sync Spotify libraries and playlists to a local music folder via YouTube Music matching.",
-  "owner": "ThuGie",
-  "overview": "Spotify browse + sync for Jellyfin",
-  "targetAbi": "10.11.0.0",
-  "timestamp": "2026-09-08T00:00:00.0000000Z",
-  "version": "1.0.1.0",
-  "changelog": "Add plugin catalog icon (1920x1080) and packaged thumb.png",
-  "imagePath": "thumb.png",
-  "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySpot/main/assets/jellyspot.png"
+    "category":  "Music",
+    "guid":  "a7c3e8f1-9b2d-4e5a-8f6c-1d2e3f4a5b6c",
+    "name":  "JellySpot",
+    "description":  "Sync Spotify libraries and playlists to a local music folder via YouTube Music matching.",
+    "owner":  "ThuGie",
+    "overview":  "Spotify browse + sync for Jellyfin",
+    "targetAbi":  "10.11.0.0",
+    "timestamp":  "2026-09-08T00:00:00.0000000Z",
+    "version":  "1.0.2.0",
+    "changelog":  "Fix settings pages using JellySeerr-style embedded HTML + getPluginConfiguration",
+    "imagePath":  "thumb.png",
+    "imageUrl":  "https://raw.githubusercontent.com/ThuGie/JellySpot/main/assets/jellyspot.png"
 }

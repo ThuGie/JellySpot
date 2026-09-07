@@ -1,0 +1,168 @@
+<div id="jellySpotBrowsePage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input">
+    <div data-role="content">
+        <div class="content-primary">
+            <div class="sectionTitleContainer">
+                <h2 class="sectionTitle">JellySpot Browse</h2>
+            </div>
+            <p>Search Spotify or open your playlists, then queue downloads. Link Spotify under <strong>JellySpot Sync</strong> first.</p>
+
+            <div style="display:flex;gap:.5em;flex-wrap:wrap;margin:1em 0;align-items:flex-end;">
+                <div class="inputContainer" style="flex:1;min-width:220px;margin:0;">
+                    <input is="emby-input" type="text" id="jellyspotSearchInput" label="Search Spotify" />
+                </div>
+                <button is="emby-button" type="button" class="raised button-submit" id="jellyspotSearchBtn"><span>Search</span></button>
+                <button is="emby-button" type="button" class="raised" id="jellyspotLoadPlaylistsBtn"><span>My Playlists</span></button>
+                <button is="emby-button" type="button" class="raised" id="jellyspotLikedBtn"><span>Liked Songs</span></button>
+            </div>
+            <div id="jellyspotBrowseStatus" class="fieldDescription"></div>
+            <div id="jellyspotBrowseResults" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.85em;margin-top:1em;"></div>
+        </div>
+    </div>
+    <script>
+        (function () {
+            var page = document.getElementById('jellySpotBrowsePage');
+
+            function pick(obj) {
+                if (!obj) return undefined;
+                for (var i = 1; i < arguments.length; i++) {
+                    if (obj[arguments[i]] !== undefined) return obj[arguments[i]];
+                }
+                return undefined;
+            }
+
+            function setStatus(msg) {
+                page.querySelector('#jellyspotBrowseStatus').textContent = msg || '';
+            }
+
+            function coverOf(item) {
+                return pick(item, 'CoverUrl', 'coverUrl', 'ImageUrl', 'imageUrl')
+                    || (item.album && item.album.images && item.album.images[0] && item.album.images[0].url)
+                    || (item.images && item.images[0] && item.images[0].url)
+                    || '';
+            }
+
+            function queueItem(kind, id, name) {
+                Dashboard.showLoadingMsg();
+                var req;
+                if (kind === 'track') {
+                    req = ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('JellySpot/Queue/Tracks'),
+                        data: JSON.stringify({ TrackIds: [id], PlaylistName: 'Manual' }),
+                        contentType: 'application/json'
+                    });
+                } else if (kind === 'playlist') {
+                    req = ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('JellySpot/Queue/Playlist/' + encodeURIComponent(id)),
+                        contentType: 'application/json'
+                    });
+                } else if (kind === 'album') {
+                    req = ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('JellySpot/Queue/Album/' + encodeURIComponent(id)),
+                        contentType: 'application/json'
+                    });
+                } else {
+                    req = ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('JellySpot/Queue/Liked'),
+                        contentType: 'application/json'
+                    });
+                }
+
+                req.then(function (res) {
+                    Dashboard.hideLoadingMsg();
+                    setStatus('Queued ' + (pick(res, 'Queued', 'queued') != null ? pick(res, 'Queued', 'queued') : name));
+                }).catch(function () {
+                    Dashboard.hideLoadingMsg();
+                    setStatus('Queue failed — link Spotify under JellySpot Sync first.');
+                });
+            }
+
+            function addCard(root, title, meta, img, onClick) {
+                var card = document.createElement('div');
+                card.style.cssText = 'padding:.75em;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;gap:.45em;';
+                card.innerHTML =
+                    (img ? '<img src="' + img + '" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;" />'
+                        : '<div style="aspect-ratio:1;background:#333;border-radius:8px;"></div>') +
+                    '<strong>' + title + '</strong>' +
+                    '<div class="fieldDescription">' + meta + '</div>';
+                var btn = document.createElement('button');
+                btn.setAttribute('is', 'emby-button');
+                btn.type = 'button';
+                btn.className = 'raised button-submit';
+                btn.innerHTML = '<span>Download / Monitor</span>';
+                btn.addEventListener('click', onClick);
+                card.appendChild(btn);
+                root.appendChild(card);
+            }
+
+            function search() {
+                var q = page.querySelector('#jellyspotSearchInput').value.trim();
+                if (!q) return;
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('JellySpot/Search?q=' + encodeURIComponent(q) + '&type=track,album,playlist&limit=10'),
+                    dataType: 'json'
+                }).then(function (data) {
+                    Dashboard.hideLoadingMsg();
+                    var root = page.querySelector('#jellyspotBrowseResults');
+                    root.innerHTML = '';
+                    var count = 0;
+                    function addItems(arr, kind) {
+                        (arr || []).forEach(function (item) {
+                            count++;
+                            addCard(root, item.name || 'Untitled', kind, coverOf(item), function () {
+                                queueItem(kind, item.id, item.name);
+                            });
+                        });
+                    }
+                    addItems(data.tracks && data.tracks.items, 'track');
+                    addItems(data.albums && data.albums.items, 'album');
+                    addItems(data.playlists && data.playlists.items, 'playlist');
+                    setStatus(count + ' results');
+                }).catch(function () {
+                    Dashboard.hideLoadingMsg();
+                    setStatus('Search failed. Link Spotify under JellySpot Sync.');
+                });
+            }
+
+            page.querySelector('#jellyspotSearchBtn').addEventListener('click', search);
+            page.querySelector('#jellyspotSearchInput').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    search();
+                }
+            });
+
+            page.querySelector('#jellyspotLoadPlaylistsBtn').addEventListener('click', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists'), dataType: 'json' })
+                    .then(function (playlists) {
+                        Dashboard.hideLoadingMsg();
+                        var root = page.querySelector('#jellyspotBrowseResults');
+                        root.innerHTML = '';
+                        (playlists || []).forEach(function (p) {
+                            var id = pick(p, 'Id', 'id');
+                            var name = pick(p, 'Name', 'name') || id;
+                            var meta = (pick(p, 'TrackCount', 'trackCount') || 0) + ' tracks';
+                            addCard(root, name, meta, coverOf(p), function () {
+                                queueItem('playlist', id, name);
+                            });
+                        });
+                        setStatus((playlists || []).length + ' playlists');
+                    })
+                    .catch(function () {
+                        Dashboard.hideLoadingMsg();
+                        setStatus('Could not load playlists.');
+                    });
+            });
+
+            page.querySelector('#jellyspotLikedBtn').addEventListener('click', function () {
+                queueItem('liked', 'liked', 'Liked Songs');
+            });
+        })();
+    </script>
+</div>

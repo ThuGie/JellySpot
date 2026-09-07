@@ -6,8 +6,10 @@ using MediaBrowser.Model.Serialization;
 
 namespace Jellyfin.Plugin.JellySpot;
 
-public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
+public class Plugin : BasePlugin<PluginConfiguration>, IHasPluginConfiguration, IHasWebPages
 {
+    public const string PluginGuid = "a7c3e8f1-9b2d-4e5a-8f6c-1d2e3f4a5b6c";
+
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
         : base(applicationPaths, xmlSerializer)
     {
@@ -16,7 +18,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public override string Name => "JellySpot";
 
-    public override Guid Id => Guid.Parse("a7c3e8f1-9b2d-4e5a-8f6c-1d2e3f4a5b6c");
+    public override Guid Id => Guid.Parse(PluginGuid);
 
     public override string Description =>
         "Sync Spotify libraries and playlists to a local music folder via YouTube Music matching.";
@@ -25,62 +27,43 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public IEnumerable<PluginPageInfo> GetPages()
     {
-        var assemblyPrefix = GetType().Namespace;
+        var prefix = GetType().Namespace;
 
-        return
-        [
-            new PluginPageInfo
-            {
-                Name = Name,
-                EmbeddedResourcePath = $"{assemblyPrefix}.Web.config.html"
-            },
-            new PluginPageInfo
-            {
-                Name = "JellySpotConfigJs",
-                EmbeddedResourcePath = $"{assemblyPrefix}.Web.config.js"
-            },
-            new PluginPageInfo
-            {
-                Name = "JellySpotBrowse",
-                DisplayName = "JellySpot Browse",
-                EnableInMainMenu = true,
-                EmbeddedResourcePath = $"{assemblyPrefix}.Web.browse.html"
-            },
-            new PluginPageInfo
-            {
-                Name = "JellySpotBrowseJs",
-                EmbeddedResourcePath = $"{assemblyPrefix}.Web.browse.js"
-            },
-            new PluginPageInfo
-            {
-                Name = "JellySpotSync",
-                DisplayName = "JellySpot Sync",
-                EnableInMainMenu = true,
-                EmbeddedResourcePath = $"{assemblyPrefix}.Web.sync.html"
-            },
-            new PluginPageInfo
-            {
-                Name = "JellySpotSyncJs",
-                EmbeddedResourcePath = $"{assemblyPrefix}.Web.sync.js"
-            },
-            new PluginPageInfo
-            {
-                Name = "JellySpotQueue",
-                DisplayName = "JellySpot Queue",
-                EnableInMainMenu = true,
-                EmbeddedResourcePath = $"{assemblyPrefix}.Web.queue.html"
-            },
-            new PluginPageInfo
-            {
-                Name = "JellySpotQueueJs",
-                EmbeddedResourcePath = $"{assemblyPrefix}.Web.queue.js"
-            },
-            new PluginPageInfo
-            {
-                Name = "JellySpotCss",
-                EmbeddedResourcePath = $"{assemblyPrefix}.Web.jellyspot.css"
-            }
-        ];
+        yield return new PluginPageInfo
+        {
+            Name = Name,
+            DisplayName = "JellySpot",
+            EnableInMainMenu = true,
+            MenuIcon = "music_note",
+            EmbeddedResourcePath = $"{prefix}.Configuration.config.html"
+        };
+
+        yield return new PluginPageInfo
+        {
+            Name = "JellySpotSync",
+            DisplayName = "JellySpot Sync",
+            EnableInMainMenu = true,
+            MenuIcon = "sync",
+            EmbeddedResourcePath = $"{prefix}.Configuration.sync.html"
+        };
+
+        yield return new PluginPageInfo
+        {
+            Name = "JellySpotBrowse",
+            DisplayName = "JellySpot Browse",
+            EnableInMainMenu = true,
+            MenuIcon = "search",
+            EmbeddedResourcePath = $"{prefix}.Configuration.browse.html"
+        };
+
+        yield return new PluginPageInfo
+        {
+            Name = "JellySpotQueue",
+            DisplayName = "JellySpot Queue",
+            EnableInMainMenu = true,
+            MenuIcon = "playlist_play",
+            EmbeddedResourcePath = $"{prefix}.Configuration.queue.html"
+        };
     }
 
     public string GetDataPath(string relative)
@@ -93,10 +76,5 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         }
 
         return path;
-    }
-
-    public string FormatVersion()
-    {
-        return Version.ToString(4);
     }
 }
