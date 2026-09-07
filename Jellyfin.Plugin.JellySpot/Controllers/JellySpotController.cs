@@ -1,13 +1,15 @@
 using System.ComponentModel.DataAnnotations;
+using System.Reflection;
 using Jellyfin.Plugin.JellySpot.Configuration;
+using Jellyfin.Plugin.JellySpot.Helpers;
 using Jellyfin.Plugin.JellySpot.Models;
 using Jellyfin.Plugin.JellySpot.Services.Download;
 using Jellyfin.Plugin.JellySpot.Services.Spotify;
 using Jellyfin.Plugin.JellySpot.Services.Storage;
 using Jellyfin.Plugin.JellySpot.Services.Sync;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
@@ -23,6 +25,7 @@ public class JellySpotController : ControllerBase
     private readonly SyncEngine _sync;
     private readonly DownloadQueueService _queue;
     private readonly IUserManager _userManager;
+    private readonly IApplicationPaths _applicationPaths;
     private readonly ILogger<JellySpotController> _logger;
 
     public JellySpotController(
@@ -32,6 +35,7 @@ public class JellySpotController : ControllerBase
         SyncEngine sync,
         DownloadQueueService queue,
         IUserManager userManager,
+        IApplicationPaths applicationPaths,
         ILogger<JellySpotController> logger)
     {
         _auth = auth;
@@ -40,22 +44,24 @@ public class JellySpotController : ControllerBase
         _sync = sync;
         _queue = queue;
         _userManager = userManager;
+        _applicationPaths = applicationPaths;
         _logger = logger;
     }
 
-    [HttpGet("jellyspot-nav.js")]
-    [AllowAnonymous]
-    public ActionResult GetNavScript()
-    {
-        var assembly = typeof(Plugin).Assembly;
-        var name = $"{typeof(Plugin).Namespace}.Inject.jellyspot-nav.js";
-        var stream = assembly.GetManifestResourceStream(name);
-        if (stream == null)
-        {
-            return NotFound();
-        }
+    [HttpGet("jellyspot-tabs.js")]
+    public ActionResult GetTabsScript() => ServeEmbedded("Inject.jellyspot-tabs.js", "application/javascript");
 
-        return File(stream, "application/javascript");
+    [HttpGet("jellyspot-tabs.css")]
+    public ActionResult GetTabsStylesheet() => ServeEmbedded("Inject.jellyspot-tabs.css", "text/css");
+
+    [HttpGet("admin/health")]
+    [Authorize(Policy = "RequiresElevation")]
+    public ActionResult GetHealth()
+    {
+        return Ok(new
+        {
+            fileTransformation = FileTransformationHelper.IsPresent(_applicationPaths)
+        });
     }
 
     [HttpGet("Configuration")]
@@ -384,5 +390,17 @@ public class JellySpotController : ControllerBase
         }
 
         throw new UnauthorizedAccessException("Unable to resolve Jellyfin user.");
+    }
+
+    private ActionResult ServeEmbedded(string resourceName, string contentType)
+    {
+        Stream? stream = Assembly.GetExecutingAssembly()
+            .GetManifestResourceStream($"{typeof(Plugin).Namespace}.{resourceName}");
+        if (stream == null)
+        {
+            return NotFound();
+        }
+
+        return File(stream, contentType);
     }
 }

@@ -8,21 +8,21 @@ Single Jellyfin plugin that links Spotify accounts, browses/searchs Spotify, and
 - **FFmpeg** on `PATH`, or set an absolute path in JellySpot admin settings
 - A [Spotify Developer](https://developer.spotify.com/dashboard) application
 - Spotify **Premium for the Spotify app owner** is required under current Spotify Development Mode rules (end-user Free accounts can still authorize for library/metadata)
-- Optional: **File Transformation** plugin — adds a music-note header button that opens JellySpot (same dependency pattern as JellySeerr). Not required for Dashboard access.
+- **File Transformation** plugin — required for home-screen **Browse / Sync / Queue** tabs (same inject system as JellySeerr)
 
-## Where to find settings
+## Where to find JellySpot
 
-Settings are **not** on the home library screen. After install + **restart Jellyfin**:
+After install + **restart Jellyfin**, open the **Home** screen. Next to Home / Favorites (and JellySeerr’s Movies / TV / Requests if you have it) you should see:
 
-1. Open the **Dashboard** (gear / admin)
-2. In the left sidebar under **Plugins**, click **JellySpot**
-3. Or: **Dashboard → Plugins → JellySpot → Settings**
+| Tab | Purpose |
+|---|---|
+| **Browse** | Search Spotify / playlists and queue downloads |
+| **Sync** | Link Spotify, liked songs, monitored playlists |
+| **Queue** | Download status and rematch |
 
-That one page has tabs: **Admin** | **Sync** | **Browse** | **Queue**.
+Admin credentials stay under **Dashboard → Plugins → JellySpot**.
 
-Direct URL path: `/web/configurationpage?name=JellySpot`
-
-If you still see nothing: confirm the plugin shows as **Active** under Plugins (not NotSupported), and that version is **1.0.3.0+**.
+If home tabs are missing: install **File Transformation**, confirm JellySpot is **Active** at **1.0.4.0+**, then restart and hard-refresh the web UI.
 
 ## Icon
 
@@ -77,7 +77,7 @@ Use your real Jellyfin base URL/port if different.
 
 3. Copy **Client ID** and **Client Secret** into **Dashboard → Plugins → JellySpot → Admin**.
 4. Set **Storage root path** to a folder that is (or will be) part of a Jellyfin music library.
-5. Each Jellyfin user opens **JellySpot → Sync** → **Link Spotify**, then picks Liked Songs / playlists.
+5. Each Jellyfin user opens the home **Sync** tab → **Link Spotify**, then picks Liked Songs / playlists.
 
 ## Features
 

@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <Version>1.0.3.0</Version>
+    <Version>1.0.4.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,7 +37,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Configuration\config.html" />
-    <EmbeddedResource Include="Inject\jellyspot-nav.js" />
+    <EmbeddedResource Include="Inject\jellyspot-tabs.js" />
+    <EmbeddedResource Include="Inject\jellyspot-tabs.css" />
   </ItemGroup>
 
 </Project>

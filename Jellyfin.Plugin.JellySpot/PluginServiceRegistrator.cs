@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellySpot.Services;
 using Jellyfin.Plugin.JellySpot.Services.Download;
 using Jellyfin.Plugin.JellySpot.Services.Matching;
 using Jellyfin.Plugin.JellySpot.Services.Spotify;
@@ -9,6 +10,7 @@ using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Jellyfin.Plugin.JellySpot;
 
@@ -31,5 +33,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<SyncEngine>();
         serviceCollection.AddSingleton<IScheduledTask, SyncScheduledTask>();
         serviceCollection.AddSingleton<IScheduledTask, StartupService>();
+        serviceCollection.AddHostedService<FileTransformationHostedService>();
     }
 }

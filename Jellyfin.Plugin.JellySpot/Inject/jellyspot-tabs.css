@@ -1,0 +1,63 @@
+.jellyspot-browse-sections,
+.jellyspot-sync-sections,
+.jellyspot-queue-sections {
+    padding: 1.25em 1.5em 2em;
+}
+
+.jellyspot-toolbar {
+    display: flex;
+    gap: 0.5em;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin: 1em 0;
+}
+
+.jellyspot-status {
+    color: var(--secondaryTextColor);
+    margin: 0.5em 0 1em;
+}
+
+.jellyspot-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.85em;
+}
+
+.jellyspot-card {
+    padding: 0.75em;
+    border-radius: 10px;
+    background: var(--cardBackground, rgba(255, 255, 255, 0.04));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 0.45em;
+}
+
+.jellyspot-card img,
+.jellyspot-card-fallback {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.jellyspot-card-fallback {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.jellyspot-queue-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.jellyspot-queue-table th,
+.jellyspot-queue-table td {
+    text-align: left;
+    padding: 0.55em 0.4em;
+    vertical-align: top;
+}
+
+.jellyspot-missing {
+    padding: 1.5em;
+    color: var(--secondaryTextColor);
+}

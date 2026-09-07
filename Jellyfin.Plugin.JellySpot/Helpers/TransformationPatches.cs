@@ -8,10 +8,11 @@ public static class TransformationPatches
     {
         string version = Plugin.Instance?.GetType().Assembly.GetName().Version?.ToString() ?? "1.0.0.0";
         string cacheParam = $"?v={version}";
-        string script =
-            $"<script defer src=\"../JellySpot/jellyspot-nav.js{cacheParam}\"></script>";
+        string cssLinks = $"<link rel=\"stylesheet\" href=\"../JellySpot/jellyspot-tabs.css{cacheParam}\" />";
+        string scripts = $"<script defer src=\"../JellySpot/jellyspot-tabs.js{cacheParam}\"></script>";
 
         return payload.Contents!
-            .Replace("</body>", $"{script}</body>", StringComparison.Ordinal);
+            .Replace("</head>", $"{cssLinks}</head>", StringComparison.Ordinal)
+            .Replace("</body>", $"{scripts}</body>", StringComparison.Ordinal);
     }
 }

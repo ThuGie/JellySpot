@@ -5,9 +5,11 @@
                 <h2 class="sectionTitle">JellySpot</h2>
             </div>
             <p class="fieldDescription">
-                Open from <strong>Dashboard → Plugins → JellySpot</strong> (sidebar under Plugins).
-                Admin tab needs elevation; Sync / Browse / Queue work for every signed-in user.
+                Home screen tabs <strong>Browse / Sync / Queue</strong> require the
+                <strong>File Transformation</strong> plugin (same as JellySeerr). Restart Jellyfin after install.
+                Admin settings stay here under Dashboard → JellySpot.
             </p>
+            <div id="jellyspotFtStatus" class="fieldDescription">Checking File Transformation…</div>
 
             <div class="localnav" style="display:flex;gap:.35em;flex-wrap:wrap;margin:1em 0 1.25em;">
                 <button is="emby-button" type="button" class="raised button-submit jellyspot-tab" data-tab="admin"><span>Admin</span></button>
@@ -532,8 +534,24 @@
             page.querySelector('#jellyspotQueueRefresh').addEventListener('click', loadQueue);
             page.querySelector('#jellyspotQueueFilter').addEventListener('change', loadQueue);
 
+            function refreshFtStatus() {
+                var el = page.querySelector('#jellyspotFtStatus');
+                if (!el) return;
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/admin/health'), dataType: 'json' })
+                    .then(function (health) {
+                        var ok = pick(health, 'fileTransformation', 'FileTransformation') === true;
+                        el.textContent = ok
+                            ? 'File Transformation is installed. Home tabs: Browse, Sync, Queue.'
+                            : 'File Transformation is missing. Install it or home tabs will not appear.';
+                    })
+                    .catch(function () {
+                        el.textContent = 'Could not check File Transformation status.';
+                    });
+            }
+
             page.addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
+                refreshFtStatus();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                     loadConfig(config);
                     Dashboard.hideLoadingMsg();
