@@ -24,15 +24,16 @@ dotnet build "$PROJECT" -c Release \
 rm -rf "$STAGE"
 mkdir -p "$STAGE" "$OUT_DIR"
 
-# Plugin zip contents: DLLs + meta.json + native runtimes
+# Plugin zip: managed plugin DLLs only.
+# Do NOT ship runtimes/**/e_sqlite3.dll — Jellyfin PluginManager loads every .dll
+# as a managed assembly and disables the plugin (BadImageFormatException).
+# SQLite comes from the Jellyfin host.
 cp "$BUILD_DIR"/Jellyfin.Plugin.JellySpot.dll "$STAGE/"
 cp "$ROOT/Jellyfin.Plugin.JellySpot/meta.json" "$STAGE/"
 cp "$BUILD_DIR"/YoutubeExplode.dll "$STAGE/" 2>/dev/null || true
 cp "$BUILD_DIR"/YoutubeExplode.Converter.dll "$STAGE/" 2>/dev/null || true
 cp "$BUILD_DIR"/TagLibSharp.dll "$STAGE/" 2>/dev/null || true
 cp "$BUILD_DIR"/FuzzySharp.dll "$STAGE/" 2>/dev/null || true
-cp "$BUILD_DIR"/Microsoft.Data.Sqlite.dll "$STAGE/" 2>/dev/null || true
-cp "$BUILD_DIR"/SQLitePCLRaw.*.dll "$STAGE/" 2>/dev/null || true
 cp "$BUILD_DIR"/AngleSharp.dll "$STAGE/" 2>/dev/null || true
 cp "$BUILD_DIR"/CliWrap.dll "$STAGE/" 2>/dev/null || true
 
@@ -41,10 +42,6 @@ if [[ -f "$ROOT/Jellyfin.Plugin.JellySpot/thumb.png" ]]; then
   cp "$ROOT/Jellyfin.Plugin.JellySpot/thumb.png" "$STAGE/"
 elif [[ -f "$ROOT/assets/thumb.png" ]]; then
   cp "$ROOT/assets/thumb.png" "$STAGE/"
-fi
-
-if [[ -d "$BUILD_DIR/runtimes" ]]; then
-  cp -a "$BUILD_DIR/runtimes" "$STAGE/"
 fi
 
 # Ensure meta.json points at packaged thumb

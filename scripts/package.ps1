@@ -34,7 +34,6 @@ $dlls = @(
     "YoutubeExplode.Converter.dll",
     "TagLibSharp.dll",
     "FuzzySharp.dll",
-    "Microsoft.Data.Sqlite.dll",
     "AngleSharp.dll",
     "CliWrap.dll"
 )
@@ -42,7 +41,6 @@ foreach ($dll in $dlls) {
     $src = Join-Path $outBuild $dll
     if (Test-Path $src) { Copy-Item $src $stage -Force }
 }
-Copy-Item (Join-Path $outBuild "SQLitePCLRaw.*.dll") $stage -Force -ErrorAction SilentlyContinue
 Copy-Item $meta (Join-Path $stage "meta.json") -Force
 
 $thumbCandidates = @(
@@ -60,11 +58,6 @@ $metaObj = Get-Content (Join-Path $stage "meta.json") | ConvertFrom-Json
 $metaObj.version = $Version
 $metaObj.imagePath = "thumb.png"
 $metaObj | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $stage "meta.json")
-
-$runtimes = Join-Path $outBuild "runtimes"
-if (Test-Path $runtimes) {
-    Copy-Item $runtimes (Join-Path $stage "runtimes") -Recurse -Force
-}
 
 $zipPath = Join-Path $root "$OutDir\JellySpot_$Version.zip"
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
