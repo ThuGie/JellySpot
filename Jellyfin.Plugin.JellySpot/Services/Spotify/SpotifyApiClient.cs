@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Jellyfin.Plugin.JellySpot.Models;
 using Microsoft.Extensions.Logging;
 
@@ -32,11 +33,20 @@ public class SpotifyApiClient
     {
         limit = Math.Clamp(limit, 1, 10);
         var path = $"/search?q={Uri.EscapeDataString(query)}&type={Uri.EscapeDataString(types)}&limit={limit}&offset={offset}";
-        return await GetStringAsync(userId, path, $"search:{types}:{query}:{limit}:{offset}", TimeSpan.FromHours(1), ct).ConfigureAwait(false);
+        var json = await GetStringAsync(userId, path, $"search:{types}:{query}:{limit}:{offset}", TimeSpan.FromHours(1), ct).ConfigureAwait(false);
+        if (json == null)
+        {
+            return null;
+        }
+
+        var tokens = await _auth.GetValidTokensAsync(userId, ct).ConfigureAwait(false);
+        return ExcludeForeignSearchPlaylists(json, tokens?.SpotifyUserId);
     }
 
     public async Task<IReadOnlyList<SpotifyPlaylistInfo>> GetUserPlaylistsAsync(Guid userId, CancellationToken ct = default, int maxItems = int.MaxValue)
     {
+        var tokens = await _auth.GetValidTokensAsync(userId, ct).ConfigureAwait(false);
+        var spotifyUserId = tokens?.SpotifyUserId;
         var playlists = new List<SpotifyPlaylistInfo>();
         var offset = 0;
         while (playlists.Count < maxItems)
@@ -49,21 +59,30 @@ public class SpotifyApiClient
             }
 
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("items", out var items))
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
             {
                 break;
             }
 
+            var pageCount = 0;
             foreach (var item in items.EnumerateArray())
             {
-                playlists.Add(ParsePlaylist(item));
+                pageCount++;
+                var playlist = ParsePlaylist(item);
+                MarkPlaylistAccess(playlist, spotifyUserId);
+                if (!CanReadPlaylistItems(playlist))
+                {
+                    continue;
+                }
+
+                playlists.Add(playlist);
                 if (playlists.Count >= maxItems)
                 {
                     break;
                 }
             }
 
-            if (playlists.Count >= maxItems || !doc.RootElement.TryGetProperty("next", out var next) || next.ValueKind == JsonValueKind.Null)
+            if (playlists.Count >= maxItems || pageCount == 0 || !doc.RootElement.TryGetProperty("next", out var next) || next.ValueKind == JsonValueKind.Null)
             {
                 break;
             }
@@ -99,7 +118,14 @@ public class SpotifyApiClient
 
         using var metaDoc = JsonDocument.Parse(metaJson);
         var playlist = ParsePlaylist(metaDoc.RootElement);
+        var tokens = await _auth.GetValidTokensAsync(userId, ct).ConfigureAwait(false);
+        MarkPlaylistAccess(playlist, tokens?.SpotifyUserId);
         var tracks = new List<SpotifyTrackInfo>();
+        if (!CanReadPlaylistItems(playlist))
+        {
+            playlist.ItemsRestricted = true;
+            return (playlist, tracks);
+        }
 
         AddTracksFromPage(metaDoc.RootElement, tracks);
         var next = tracks.Count == 0 ? PlaylistItemsPath(playlistId, 0) : ReadNext(ResolvePaging(metaDoc.RootElement));
@@ -446,7 +472,7 @@ public class SpotifyApiClient
 
     public async Task<IReadOnlyList<SpotifyTrackInfo>> GetTopTracksAsync(
         Guid userId,
-        int limit = 18,
+        int limit = 50,
         string timeRange = "medium_term",
         CancellationToken ct = default)
     {
@@ -468,7 +494,7 @@ public class SpotifyApiClient
 
     public async Task<IReadOnlyList<SpotifyArtistInfo>> GetTopArtistsAsync(
         Guid userId,
-        int limit = 18,
+        int limit = 50,
         string timeRange = "medium_term",
         CancellationToken ct = default)
     {
@@ -509,7 +535,7 @@ public class SpotifyApiClient
         return artists;
     }
 
-    public async Task<IReadOnlyList<SpotifyTrackInfo>> GetRecentlyPlayedAsync(Guid userId, int limit = 20, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SpotifyTrackInfo>> GetRecentlyPlayedAsync(Guid userId, int limit = 50, CancellationToken ct = default)
     {
         limit = Math.Clamp(limit, 1, 50);
         var json = await GetStringAsync(
@@ -1101,12 +1127,63 @@ public class SpotifyApiClient
             info.TrackCount = total2.GetInt32();
         }
 
-        if (el.TryGetProperty("owner", out var owner) && owner.TryGetProperty("id", out var oid))
+        if (el.TryGetProperty("owner", out var owner) && owner.ValueKind == JsonValueKind.Object)
         {
-            info.OwnerId = oid.GetString();
+            if (owner.TryGetProperty("id", out var oid))
+            {
+                info.OwnerId = oid.GetString();
+            }
+
+            if (owner.TryGetProperty("display_name", out var ownerName) && ownerName.ValueKind == JsonValueKind.String)
+            {
+                info.OwnerName = ownerName.GetString();
+            }
+
+            info.OwnerName ??= info.OwnerId;
         }
 
         return info;
+    }
+
+    private static void MarkPlaylistAccess(SpotifyPlaylistInfo playlist, string? spotifyUserId)
+    {
+        playlist.Owned = !string.IsNullOrEmpty(spotifyUserId)
+            && !string.IsNullOrEmpty(playlist.OwnerId)
+            && string.Equals(playlist.OwnerId, spotifyUserId, StringComparison.Ordinal);
+    }
+
+    private static bool CanReadPlaylistItems(SpotifyPlaylistInfo playlist)
+    {
+        return playlist.Owned || playlist.Collaborative;
+    }
+
+    private static string ExcludeForeignSearchPlaylists(string json, string? spotifyUserId)
+    {
+        try
+        {
+            var root = JsonNode.Parse(json);
+            var items = root?["playlists"]?["items"] as JsonArray;
+            if (root == null || items == null)
+            {
+                return json;
+            }
+
+            for (var i = items.Count - 1; i >= 0; i--)
+            {
+                var ownerId = items[i]?["owner"]?["id"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(spotifyUserId) ||
+                    !string.Equals(ownerId, spotifyUserId, StringComparison.Ordinal))
+                {
+                    items.RemoveAt(i);
+                }
+            }
+
+            return root.ToJsonString();
+        }
+        catch (JsonException)
+        {
+            return json;
+        }
     }
 
     public static SpotifyTrackInfo ParseTrack(JsonElement el)
@@ -1127,6 +1204,7 @@ public class SpotifyApiClient
                 if (a.TryGetProperty("name", out var an) && an.GetString() is { } artistName)
                 {
                     track.Artists.Add(artistName);
+                    track.ArtistIds.Add(a.TryGetProperty("id", out var aid) ? aid.GetString() ?? string.Empty : string.Empty);
                 }
             }
         }

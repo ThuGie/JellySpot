@@ -233,6 +233,23 @@
     border: 1px solid color-mix(in srgb, var(--theme-primary-color, #00a4dc) 40%, transparent);
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
     font-weight: 600;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.85em;
+}
+
+.jellyspot-toast-action {
+    appearance: none;
+    border: 0;
+    background: rgba(255, 255, 255, 0.14);
+    color: inherit;
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+    border-radius: 999px;
+    padding: 0.25em 0.7em;
+    white-space: nowrap;
 }
 
 .jellyspot-toast.is-ok {
@@ -302,6 +319,7 @@
 }
 
 .jellyspot-search {
+    position: relative;
     flex: 1 1 280px;
     min-width: 220px;
     margin: 0;
@@ -315,7 +333,28 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(0, 0, 0, 0.22);
     color: inherit;
-    padding: 0 0.9em;
+    padding: 0 2.4em 0 0.9em;
+}
+
+.jellyspot-search-clear {
+    position: absolute;
+    right: 0.35em;
+    top: 50%;
+    transform: translateY(-50%);
+    appearance: none;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 1.35rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.15em 0.4em;
+    opacity: 0.7;
+}
+
+.jellyspot-search-clear[hidden] {
+    display: none;
 }
 
 .jellyspot-identity {
@@ -361,21 +400,6 @@
     min-width: 0;
 }
 
-.jellyspot-shelf {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(13.3em, 16em);
-    gap: 1em;
-    overflow-x: auto;
-    padding: 0.15em 0 1em;
-    scroll-snap-type: x mandatory;
-    width: 100%;
-}
-
-.jellyspot-shelf .jellyspot-card {
-    scroll-snap-align: start;
-}
-
 .jellyspot-card.is-artist .jellyspot-card-art,
 .jellyspot-card.is-artist img,
 .jellyspot-card.is-artist .jellyspot-card-fallback,
@@ -391,6 +415,50 @@
     color: var(--theme-primary-color, #00a4dc);
     cursor: pointer;
     font: inherit;
+}
+
+.jellyspot-load-more {
+    display: block;
+    margin: 1.25em auto 0.5em;
+}
+
+.jellyspot-range-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    margin: 0 0 1em;
+}
+
+.jellyspot-range-btn {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    border-radius: 999px;
+    padding: 0.35em 0.85em;
+}
+
+.jellyspot-range-btn.is-active {
+    background: color-mix(in srgb, var(--theme-primary-color, #00a4dc) 28%, transparent);
+    border-color: color-mix(in srgb, var(--theme-primary-color, #00a4dc) 50%, transparent);
+}
+
+.jellyspot-playlist-filter {
+    width: min(28em, 100%);
+    box-sizing: border-box;
+    margin: 0 0 0.75em;
+    height: 2.4em;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.22);
+    color: inherit;
+    padding: 0 0.85em;
+}
+
+.jellyspot-artist-link {
+    display: inline;
 }
 
 .jellyspot-empty.is-inline {
@@ -668,6 +736,12 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+button.jellyspot-track-title {
+    display: block;
+    max-width: 100%;
+    text-align: left;
 }
 
 .jellyspot-muted {

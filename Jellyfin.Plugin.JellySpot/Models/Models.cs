@@ -152,6 +152,8 @@ public class SpotifyTrackInfo
     public string? CoverUrl { get; set; }
 
     public string? AlbumId { get; set; }
+
+    public List<string> ArtistIds { get; set; } = [];
 }
 
 public class SpotifyPlaylistInfo
@@ -171,6 +173,10 @@ public class SpotifyPlaylistInfo
     public bool Collaborative { get; set; }
 
     public string? OwnerId { get; set; }
+
+    public string? OwnerName { get; set; }
+
+    public bool Owned { get; set; }
 
     public bool ItemsRestricted { get; set; }
 

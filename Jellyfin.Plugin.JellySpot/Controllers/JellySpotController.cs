@@ -240,8 +240,23 @@ public class JellySpotController : ControllerBase
             Playlist = result.Value.Playlist,
             Tracks = result.Value.Tracks,
             Restricted = result.Value.Playlist.ItemsRestricted,
+            Owned = result.Value.Playlist.Owned,
+            OwnerName = result.Value.Playlist.OwnerName,
             Error = result.Value.Playlist.ItemsError
         });
+    }
+
+    [HttpGet("Tracks/{id}")]
+    [Authorize]
+    public async Task<ActionResult> Track(string id, CancellationToken ct)
+    {
+        var track = await _spotify.GetTrackAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), id, ct).ConfigureAwait(false);
+        if (track == null)
+        {
+            return NotFound();
+        }
+
+        return Ok(track);
     }
 
     [HttpGet("Albums/{id}")]
@@ -283,15 +298,21 @@ public class JellySpotController : ControllerBase
         var playlistsTask = _spotify.GetUserPlaylistsAsync(userId, ct, 40);
         var albumsTask = _spotify.GetSavedAlbumsAsync(userId, 40, ct);
         var artistsTask = _spotify.GetFollowedArtistsAsync(userId, 40, ct);
-        var likedTask = _spotify.GetLikedPreviewAsync(userId, 12, ct);
-        var recentTask = _spotify.GetRecentlyPlayedAsync(userId, 20, ct);
-        var topTracksTask = _spotify.GetTopTracksAsync(userId, 18, "medium_term", ct);
-        var topArtistsTask = _spotify.GetTopArtistsAsync(userId, 18, "medium_term", ct);
+        var likedTask = _spotify.GetLikedPreviewAsync(userId, 8, ct);
+        var recentTask = _spotify.GetRecentlyPlayedAsync(userId, 50, ct);
+        var topTracksTask = _spotify.GetTopTracksAsync(userId, 50, "medium_term", ct);
+        var topArtistsTask = _spotify.GetTopArtistsAsync(userId, 50, "medium_term", ct);
         await Task.WhenAll(playlistsTask, albumsTask, artistsTask, likedTask, recentTask, topTracksTask, topArtistsTask).ConfigureAwait(false);
 
         var playlists = playlistsTask.Result;
         var liked = likedTask.Result;
+        var albums = albumsTask.Result;
+        var artists = artistsTask.Result;
+        var recent = recentTask.Result;
+        var topTracks = topTracksTask.Result;
+        var topArtists = topArtistsTask.Result;
         var scope = tokens.Scope ?? string.Empty;
+        var preview = 8;
         return Ok(new
         {
             Linked = true,
@@ -300,16 +321,19 @@ public class JellySpotController : ControllerBase
             NeedsRelink = scope.IndexOf("user-top-read", StringComparison.OrdinalIgnoreCase) < 0
                 || scope.IndexOf("user-read-recently-played", StringComparison.OrdinalIgnoreCase) < 0,
             PlaylistCount = playlists.Count,
-            Playlists = playlists.Take(18).ToList(),
-            Albums = albumsTask.Result,
-            AlbumCount = albumsTask.Result.Count,
-            Artists = artistsTask.Result,
-            ArtistCount = artistsTask.Result.Count,
+            Playlists = playlists.Take(preview).ToList(),
+            Albums = albums.Take(preview).ToList(),
+            AlbumCount = albums.Count,
+            Artists = artists.Take(preview).ToList(),
+            ArtistCount = artists.Count,
             LikedCount = liked.Total,
             LikedPreview = liked.Preview,
-            RecentlyPlayed = recentTask.Result,
-            TopTracks = topTracksTask.Result,
-            TopArtists = topArtistsTask.Result
+            RecentlyPlayed = recent.Take(preview).ToList(),
+            RecentlyPlayedCount = recent.Count,
+            TopTracks = topTracks.Take(preview).ToList(),
+            TopTrackCount = topTracks.Count,
+            TopArtists = topArtists.Take(preview).ToList(),
+            TopArtistCount = topArtists.Count
         });
     }
 
@@ -327,6 +351,35 @@ public class JellySpotController : ControllerBase
     public async Task<ActionResult> FollowedArtists(CancellationToken ct)
     {
         var artists = await _spotify.GetFollowedArtistsAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), 400, ct)
+            .ConfigureAwait(false);
+        return Ok(artists);
+    }
+
+    [HttpGet("Library/RecentlyPlayed")]
+    [Authorize]
+    public async Task<ActionResult> RecentlyPlayed(CancellationToken ct)
+    {
+        var tracks = await _spotify.GetRecentlyPlayedAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), 50, ct)
+            .ConfigureAwait(false);
+        return Ok(tracks);
+    }
+
+    [HttpGet("Library/TopTracks")]
+    [Authorize]
+    public async Task<ActionResult> TopTracks([FromQuery] string? range, CancellationToken ct)
+    {
+        var timeRange = range is "short_term" or "long_term" ? range : "medium_term";
+        var tracks = await _spotify.GetTopTracksAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), 50, timeRange, ct)
+            .ConfigureAwait(false);
+        return Ok(tracks);
+    }
+
+    [HttpGet("Library/TopArtists")]
+    [Authorize]
+    public async Task<ActionResult> TopArtists([FromQuery] string? range, CancellationToken ct)
+    {
+        var timeRange = range is "short_term" or "long_term" ? range : "medium_term";
+        var artists = await _spotify.GetTopArtistsAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), 50, timeRange, ct)
             .ConfigureAwait(false);
         return Ok(artists);
     }
@@ -379,6 +432,22 @@ public class JellySpotController : ControllerBase
         settings.Enabled = true;
         await _store.SaveUserSettingsAsync(settings, ct).ConfigureAwait(false);
         return Ok(new { Monitored = true, PlaylistId = id });
+    }
+
+    [HttpPost("Albums/{id}/Monitor")]
+    [Authorize]
+    public async Task<ActionResult> MonitorAlbum(string id, CancellationToken ct)
+    {
+        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
+        var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
+        if (!settings.MonitoredAlbumIds.Contains(id))
+        {
+            settings.MonitoredAlbumIds.Add(id);
+        }
+
+        settings.Enabled = true;
+        await _store.SaveUserSettingsAsync(settings, ct).ConfigureAwait(false);
+        return Ok(new { Monitored = true, AlbumId = id });
     }
 
     [HttpGet("LikedSongs")]
