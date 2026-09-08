@@ -25,13 +25,20 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
     window.jellySpotPlugin = {
         TAB_DEFS: {
-            browse: { sectionClass: 'jellyspot-browse-sections', defaultTitle: 'Browse' },
-            liked: { sectionClass: 'jellyspot-liked-sections', defaultTitle: 'Liked' },
-            sync: { sectionClass: 'jellyspot-sync-sections', defaultTitle: 'Sync' },
-            queue: { sectionClass: 'jellyspot-queue-sections', defaultTitle: 'Queue' }
+            browse: { sectionClass: 'jellyspot-browse-sections', defaultTitle: 'Spotify Browse' }
+        },
+        INNER_SECTIONS: {
+            home: true,
+            liked: true,
+            sync: true,
+            queue: true,
+            playlists: true,
+            albums: true,
+            artists: true
         },
 
         _watchersReady: false,
+        _pendingInner: null,
         _handlersBound: false,
         _tabsEnsuring: false,
         _tabsEnsureQueued: false,
@@ -249,12 +256,21 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 bar = document.createElement('div');
                 bar.id = 'jellyspot-header-tabs';
                 bar.className = 'jellyspot-header-tabs';
-                Object.keys(self.TAB_DEFS).forEach(function (id) {
-                    const button = document.createElement('button');
+                host.appendChild(bar);
+                log.info('fallback Home text tabs attached');
+            }
+            bar.querySelectorAll('[data-jellyspot-tab]').forEach(function (btn) {
+                if (!self.TAB_DEFS[btn.getAttribute('data-jellyspot-tab')]) {
+                    btn.remove();
+                }
+            });
+            Object.keys(self.TAB_DEFS).forEach(function (id) {
+                let button = bar.querySelector('[data-jellyspot-tab="' + id + '"]');
+                if (!button) {
+                    button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'jellyspot-header-tab';
                     button.setAttribute('data-jellyspot-tab', id);
-                    button.textContent = self.TAB_DEFS[id].defaultTitle;
                     button.addEventListener('click', function () {
                         self.showPluginTab(id);
                         const native = document.querySelector('.headerTabs [data-jellyspot-tab="' + id + '"]');
@@ -263,10 +279,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         }
                     });
                     bar.appendChild(button);
-                });
-                host.appendChild(bar);
-                log.info('fallback Home text tabs attached');
-            }
+                }
+                button.textContent = self.TAB_DEFS[id].defaultTitle;
+            });
             if (page) {
                 Object.keys(self.TAB_DEFS).forEach(function (id) {
                     if (!page.querySelector('.tabContent[data-jellyspot-tab="' + id + '"]')) {
@@ -404,44 +419,52 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             if (!page) {
                 return;
             }
+            page.classList.remove('jellyspot-is-open');
             page.querySelectorAll('.tabContent[data-jellyspot-tab]').forEach(function (panel) {
                 panel.classList.add('hide');
                 panel.classList.remove('is-active');
             });
-            const homeTab = page.querySelector('#homeTab');
-            const favoritesTab = page.querySelector('#favoritesTab');
-            if (homeTab) {
-                homeTab.classList.remove('hide');
-            }
-            if (favoritesTab) {
-                favoritesTab.classList.remove('hide');
-            }
+            page.querySelectorAll('#homeTab, #favoritesTab, .tabContent[data-jellySeerr-tab]').forEach(function (panel) {
+                panel.classList.remove('hide');
+            });
         },
 
         showPluginTab: function (id) {
             const page = document.getElementById('indexPage');
-            if (!page || !id) {
+            if (!page) {
                 return;
             }
+            const tab = this.TAB_DEFS[id] ? id : 'browse';
+            page.classList.add('jellyspot-is-open');
             page.querySelectorAll('.tabContent[data-jellyspot-tab]').forEach(function (panel) {
-                const active = panel.getAttribute('data-jellyspot-tab') === id;
+                const active = panel.getAttribute('data-jellyspot-tab') === tab;
                 panel.classList.toggle('hide', !active);
                 panel.classList.toggle('is-active', active);
             });
-            ['#homeTab', '#favoritesTab'].forEach(function (sel) {
-                const native = page.querySelector(sel);
-                if (native) {
-                    native.classList.add('hide');
-                    native.classList.remove('is-active');
-                }
+            page.querySelectorAll('#homeTab, #favoritesTab, .tabContent[data-jellySeerr-tab], .tabContent[id^="customTab_"]').forEach(function (panel) {
+                panel.classList.add('hide');
+                panel.classList.remove('is-active');
             });
-            this.mountTab(id);
+            this.mountTab(tab);
         },
 
         applyTabs: function (page, tabsSlider) {
             const self = this;
             let changed = false;
             let index = self.nextTabIndex(tabsSlider);
+
+            tabsSlider.querySelectorAll('[data-jellyspot-tab]').forEach(function (btn) {
+                if (!self.TAB_DEFS[btn.getAttribute('data-jellyspot-tab')]) {
+                    btn.remove();
+                    changed = true;
+                }
+            });
+            page.querySelectorAll('.tabContent[data-jellyspot-tab]').forEach(function (panel) {
+                if (!self.TAB_DEFS[panel.getAttribute('data-jellyspot-tab')]) {
+                    panel.remove();
+                    changed = true;
+                }
+            });
 
             Object.keys(self.TAB_DEFS).forEach(function (id) {
                 let button = tabsSlider.querySelector('[data-jellyspot-tab="' + id + '"]');
@@ -451,6 +474,13 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     button = self.createTabButton(id);
                     tabsSlider.appendChild(button);
                     changed = true;
+                } else {
+                    const titleEl = button.querySelector('.emby-button-foreground');
+                    const wanted = self.TAB_DEFS[id].defaultTitle;
+                    if (titleEl && titleEl.textContent !== wanted) {
+                        titleEl.textContent = wanted;
+                        changed = true;
+                    }
                 }
                 if (!panel) {
                     panel = self.createTabPanel(id);
@@ -510,7 +540,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 }
                 const changed = self.applyTabs(page, tabsSlider);
                 if (changed) {
-                    log.info('native tab bar ready: browse, liked, sync, queue');
+                    log.info('native tab bar ready: Spotify Browse');
                     if (tabsEl && typeof tabsEl.refresh === 'function') {
                         try {
                             tabsEl.refresh();
@@ -544,13 +574,28 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             return self._tabsEnsuring;
         },
 
-        requestedTab: function () {
+        requestedRawTab: function () {
             const hash = String(window.location.hash || '');
             const query = hash.indexOf('?') >= 0 ? hash.slice(hash.indexOf('?') + 1) : '';
             const fromHash = new URLSearchParams(query).get('tab');
             const fromStore = sessionStorage.getItem('jellyspotOpenTab');
-            const tab = fromHash || fromStore;
-            return tab && this.TAB_DEFS[tab] ? tab : null;
+            return fromHash || fromStore || null;
+        },
+
+        requestedTab: function () {
+            const tab = this.requestedRawTab();
+            if (!tab) {
+                return null;
+            }
+            return this.TAB_DEFS[tab] || this.INNER_SECTIONS[tab] ? 'browse' : null;
+        },
+
+        requestedInner: function () {
+            const tab = this.requestedRawTab();
+            if (!tab || tab === 'browse' || !this.INNER_SECTIONS[tab]) {
+                return null;
+            }
+            return tab;
         },
 
         openRequestedTab: function () {
@@ -558,10 +603,12 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             if (!tab) {
                 return;
             }
-            const button = document.querySelector('.headerTabs [data-jellyspot-tab="' + tab + '"]');
+            const button = document.querySelector('.headerTabs [data-jellyspot-tab="' + tab + '"]') ||
+                document.querySelector('#jellyspot-header-tabs [data-jellyspot-tab="' + tab + '"]');
             if (!button) {
                 return;
             }
+            this._pendingInner = this.requestedInner();
             sessionStorage.removeItem('jellyspotOpenTab');
             this.showPluginTab(tab);
             if (typeof button.click === 'function') {
@@ -570,13 +617,13 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         },
 
         openUserUi: function (tab) {
-            const id = this.TAB_DEFS[tab] ? tab : 'browse';
-            sessionStorage.setItem('jellyspotOpenTab', id);
+            const raw = tab && (this.TAB_DEFS[tab] || this.INNER_SECTIONS[tab]) ? tab : 'browse';
+            sessionStorage.setItem('jellyspotOpenTab', raw);
             if (this.isHomeHash()) {
                 this.ensureNativeTabs().then(() => this.openRequestedTab());
                 return;
             }
-            window.location.hash = '#/home?tab=' + encodeURIComponent(id);
+            window.location.hash = '#/home?tab=' + encodeURIComponent(raw);
         },
 
         isDashboardContext: function () {
@@ -679,15 +726,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             if (!root) {
                 return;
             }
-            if (id === 'browse') {
-                this.renderBrowse(root);
-            } else if (id === 'liked') {
-                this.renderLiked(root);
-            } else if (id === 'sync') {
-                this.renderSync(root);
-            } else if (id === 'queue') {
-                this.renderQueue(root);
-            }
+            this.renderBrowse(root);
         },
 
         linkedName: function (me) {
@@ -803,6 +842,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             this.requireLinked(root, function (me) {
                 if (root.dataset.jellyspotMounted) {
+                    self.applyPendingInner(root);
                     return;
                 }
                 root.dataset.jellyspotMounted = 'true';
@@ -810,24 +850,30 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 root.innerHTML =
                     '<div class="jellyspot-app">' +
                     '<div class="jellyspot-hero"><div>' +
-                    '<div class="jellyspot-kicker">Your library</div>' +
-                    '<h2 class="sectionTitle jellyspot-title">Browse</h2>' +
-                    '<p class="jellyspot-lede">Signed in as ' + who + '. Playlists, saved albums, and artists you follow — pick tracks and queue only those.</p>' +
+                    '<div class="jellyspot-kicker">Spotify</div>' +
+                    '<h2 class="sectionTitle jellyspot-title">Spotify Browse</h2>' +
+                    '<p class="jellyspot-lede">Signed in as ' + who + '. Library, liked songs, sync, and the download queue live here.</p>' +
                     '</div></div>' +
                     '<div class="jellyspot-identity" hidden></div>' +
-                    '<div class="jellyspot-toolbar jellyspot-toolbar-primary">' +
-                    '<div class="jellyspot-search"><input type="search" class="jellyspot-search-input" placeholder="Search tracks, albums, playlists, artists" /></div>' +
-                    '<button is="emby-button" type="button" class="raised button-submit jellyspot-search-btn"><span>Search</span></button>' +
-                    '</div>' +
                     '<div class="jellyspot-libnav" role="tablist">' +
                     '<button type="button" class="jellyspot-libnav-btn is-active" data-lib="home">Overview</button>' +
                     '<button type="button" class="jellyspot-libnav-btn" data-lib="playlists">Playlists</button>' +
                     '<button type="button" class="jellyspot-libnav-btn" data-lib="albums">Albums</button>' +
                     '<button type="button" class="jellyspot-libnav-btn" data-lib="artists">Artists</button>' +
                     '<button type="button" class="jellyspot-libnav-btn" data-lib="liked">Liked</button>' +
+                    '<button type="button" class="jellyspot-libnav-btn" data-lib="sync">Sync</button>' +
+                    '<button type="button" class="jellyspot-libnav-btn" data-lib="queue">Queue</button>' +
+                    '</div>' +
+                    '<div class="jellyspot-library-chrome">' +
+                    '<div class="jellyspot-toolbar jellyspot-toolbar-primary">' +
+                    '<div class="jellyspot-search"><input type="search" class="jellyspot-search-input" placeholder="Search tracks, albums, playlists, artists" /></div>' +
+                    '<button is="emby-button" type="button" class="raised button-submit jellyspot-search-btn"><span>Search</span></button>' +
                     '</div>' +
                     '<div class="jellyspot-status jellyspot-browse-status">Loading your library…</div>' +
                     '<div class="jellyspot-stage jellyspot-browse-results"></div>' +
+                    '</div>' +
+                    '<div class="jellyspot-pane hide" data-pane="sync"></div>' +
+                    '<div class="jellyspot-pane hide" data-pane="queue"></div>' +
                     '</div>';
 
                 root.querySelector('.jellyspot-search-btn').addEventListener('click', function () {
@@ -844,7 +890,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         self.showLibrarySection(root, btn.getAttribute('data-lib'));
                     });
                 });
-                self.loadLibraryHome(root);
+                if (!self.applyPendingInner(root)) {
+                    self.loadLibraryHome(root);
+                }
             });
         },
 
@@ -1383,10 +1431,47 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             });
         },
 
+        applyPendingInner: function (root) {
+            const inner = this._pendingInner;
+            this._pendingInner = null;
+            if (!inner || !this.INNER_SECTIONS[inner]) {
+                return false;
+            }
+            this.showLibrarySection(root, inner);
+            return true;
+        },
+
+        showLibraryChrome: function (root, id) {
+            const isAccount = id === 'sync' || id === 'queue';
+            const library = root.querySelector('.jellyspot-library-chrome');
+            const syncPane = root.querySelector('[data-pane="sync"]');
+            const queuePane = root.querySelector('[data-pane="queue"]');
+            if (library) {
+                library.classList.toggle('hide', isAccount);
+            }
+            if (syncPane) {
+                syncPane.classList.toggle('hide', id !== 'sync');
+            }
+            if (queuePane) {
+                queuePane.classList.toggle('hide', id !== 'queue');
+            }
+        },
+
         showLibrarySection: function (root, section) {
             const id = section || 'home';
             this.setLibraryNav(root, id);
-            if (id === 'home') {
+            this.showLibraryChrome(root, id);
+            if (id === 'sync') {
+                const pane = root.querySelector('[data-pane="sync"]');
+                if (pane) {
+                    this.renderSync(pane);
+                }
+            } else if (id === 'queue') {
+                const pane = root.querySelector('[data-pane="queue"]');
+                if (pane) {
+                    this.renderQueue(pane);
+                }
+            } else if (id === 'home') {
                 this.loadLibraryHome(root);
             } else if (id === 'playlists') {
                 this.loadPlaylists(root);

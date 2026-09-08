@@ -8,21 +8,21 @@ Single Jellyfin plugin that links Spotify accounts, browses/searchs Spotify, and
 - **FFmpeg** from Jellyfin’s own encoder (Dashboard → Playback → Transcoding), then PATH. Optional override in admin settings.
 - A [Spotify Developer](https://developer.spotify.com/dashboard) application
 - Spotify **Premium for the Spotify app owner** is required under current Spotify Development Mode rules (end-user Free accounts can still authorize for library/metadata)
-- **File Transformation** plugin — required for home-screen **Browse / Sync / Queue** tabs (same inject system as JellySeerr)
+- **File Transformation** plugin — required for the home-screen **Spotify Browse** tab (same inject system as JellySeerr)
 
 ## Where to find JellySpot
 
-After install + **restart Jellyfin**, open the **Home** screen. Next to Home / Favorites (and JellySeerr’s Movies / TV / Requests if you have it) you should see:
+After install + **restart Jellyfin**, open the **Home** screen. Next to Home / Favorites (and JellySeerr’s Movies / TV / Requests if you have it) you should see one tab:
 
 | Tab | Purpose |
 |---|---|
-| **Browse** | Per-user library: playlists, saved albums, artists, liked songs, search |
-| **Sync** | Link Spotify, liked songs, monitored playlists |
-| **Queue** | Download status and rematch |
+| **Spotify Browse** | Music only: library, liked songs, sync, and the download queue |
+
+Inside that tab, use the row of buttons for **Overview / Playlists / Albums / Artists / Liked / Sync / Queue**.
 
 **Admin:** left Dashboard menu → **JellySpot** (settings), same pattern as JellySeerr / StreamReady.
 
-**Everyone:** Home header tabs next to Home / Favorites — **Browse**, **Liked**, **Sync**, **Queue**. First time, link your own Spotify; Browse then shows that account only.
+**Everyone:** Home header → **Spotify Browse**. First time, link your own Spotify; the library then shows that account only.
 
 If home tabs are missing: install **File Transformation**, confirm JellySpot is **Active**, then restart and hard-refresh the web UI.
 
@@ -79,14 +79,14 @@ Use your real Jellyfin base URL/port if different.
 
 3. Copy **Client ID** and **Client Secret** into **Dashboard → Plugins → JellySpot → Admin**.
 4. Pick a **Music library** (auto-detected) or set a custom storage folder. FFmpeg is taken from Jellyfin unless you override it.
-5. Each Jellyfin user opens the home **Sync** tab → **Link Spotify**, then picks Liked Songs / playlists.
+5. Each Jellyfin user opens **Spotify Browse** → **Sync** → **Link Spotify**, then picks Liked Songs / playlists.
 
 ## Features
 
 | Area | What you get |
 |---|---|
 | Admin | Storage path, Spotify credentials, rate limits, format, match threshold |
-| Browse | Spotify search + playlists; queue downloads / monitor |
+| Spotify Browse | One Home tab: search, playlists, albums, artists, liked, sync, queue |
 | My Sync | Per-user OAuth, monitored playlists, artist include/exclude filters, Sync now |
 | Queue | Status, match scores, rematch failed/completed items |
 | Sync task | Scheduled `JellySpot Sync` task; uses playlist `snapshot_id` to skip unchanged lists |

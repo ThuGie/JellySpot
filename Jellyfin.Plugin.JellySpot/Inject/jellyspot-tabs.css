@@ -2,6 +2,35 @@
     display: inline-flex !important;
 }
 
+.headerTabs [data-jellyspot-tab="liked"],
+.headerTabs [data-jellyspot-tab="sync"],
+.headerTabs [data-jellyspot-tab="queue"],
+.jellyspot-header-tabs [data-jellyspot-tab="liked"],
+.jellyspot-header-tabs [data-jellyspot-tab="sync"],
+.jellyspot-header-tabs [data-jellyspot-tab="queue"] {
+    display: none !important;
+}
+
+#indexPage.jellyspot-is-open > .tabContent:not([data-jellyspot-tab]),
+#indexPage.jellyspot-is-open .pageTabContent:not([data-jellyspot-tab]),
+#indexPage.jellyspot-is-open .homeSectionsContainer,
+#indexPage.jellyspot-is-open .homeSection,
+#indexPage.jellyspot-is-open .jellySeerr-movies-sections,
+#indexPage.jellyspot-is-open .jellySeerr-tv-sections,
+#indexPage.jellyspot-is-open .jellySeerr-requests-sections {
+    display: none !important;
+}
+
+#indexPage.jellyspot-is-open .tabContent[data-jellyspot-tab="browse"] {
+    display: block !important;
+}
+
+#indexPage .tabContent[data-jellyspot-tab="liked"],
+#indexPage .tabContent[data-jellyspot-tab="sync"],
+#indexPage .tabContent[data-jellyspot-tab="queue"] {
+    display: none !important;
+}
+
 .jellyspot-header-tabs {
     display: flex;
     flex-wrap: wrap;
@@ -135,6 +164,10 @@
 .jellyspot-libnav-btn.is-active {
     background: color-mix(in srgb, var(--theme-primary-color, #00a4dc) 22%, transparent);
     border-color: color-mix(in srgb, var(--theme-primary-color, #00a4dc) 45%, transparent);
+}
+
+.jellyspot-pane {
+    min-width: 0;
 }
 
 .jellyspot-shelf {
