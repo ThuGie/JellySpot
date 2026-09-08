@@ -1,7 +1,11 @@
 <div id="jellySpotConfigurationPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input,emby-checkbox,emby-select">
     <script>
         (function () {
+            if (document.getElementById('jellyspot-config-css')) {
+                return;
+            }
             var link = document.createElement('link');
+            link.id = 'jellyspot-config-css';
             link.rel = 'stylesheet';
             link.href = ApiClient.getUrl('JellySpot/Configuration/config.css');
             document.head.appendChild(link);
@@ -706,7 +710,11 @@
                 });
             }
 
-            page.addEventListener('pageshow', function () {
+            function bootSettings() {
+                if (page.dataset.jspReady === '1') {
+                    return;
+                }
+                page.dataset.jspReady = '1';
                 var bg = getComputedStyle(document.body).backgroundColor || '';
                 var rgb = bg.match(/\d+/g) || [];
                 var brightness = rgb.length >= 3
@@ -720,9 +728,11 @@
                     Dashboard.hideLoadingMsg();
                 }).catch(function () {
                     Dashboard.hideLoadingMsg();
-                    showTab('sync');
                 });
-            });
+            }
+            page.addEventListener('viewshow', bootSettings);
+            page.addEventListener('pageshow', bootSettings);
+            bootSettings();
         })();
     </script>
 </div>
