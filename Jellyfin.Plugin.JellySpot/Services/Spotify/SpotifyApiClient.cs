@@ -75,7 +75,18 @@ public class SpotifyApiClient
         string playlistId,
         CancellationToken ct = default)
     {
-        var metaJson = await GetStringAsync(userId, $"/playlists/{playlistId}", $"playlist:{playlistId}", TimeSpan.FromDays(1), ct)
+        playlistId = NormalizePlaylistId(playlistId);
+        if (string.IsNullOrEmpty(playlistId))
+        {
+            return null;
+        }
+
+        var metaJson = await GetStringAsync(
+                userId,
+                $"/playlists/{Uri.EscapeDataString(playlistId)}?market=from_token&additional_types=track",
+                $"playlist-v2:{playlistId}",
+                TimeSpan.FromHours(12),
+                ct)
             .ConfigureAwait(false);
         if (metaJson == null)
         {
@@ -85,55 +96,39 @@ public class SpotifyApiClient
         using var metaDoc = JsonDocument.Parse(metaJson);
         var playlist = ParsePlaylist(metaDoc.RootElement);
         var tracks = new List<SpotifyTrackInfo>();
+        string? next = null;
 
-        var offset = 0;
-        while (true)
+        if (metaDoc.RootElement.TryGetProperty("tracks", out var embedded))
         {
-            var path = $"/playlists/{playlistId}/tracks?limit=50&offset={offset}";
-            var json = await GetStringAsync(userId, path, $"playlist-tracks:{playlistId}:{offset}", TimeSpan.FromHours(12), ct)
+            AddTracksFromPage(embedded, tracks);
+            next = ReadNext(embedded);
+        }
+
+        if (tracks.Count == 0)
+        {
+            next = PlaylistTracksPath(playlistId, 0);
+        }
+
+        await FollowTrackPagesAsync(userId, playlistId, next, tracks, ct).ConfigureAwait(false);
+
+        if (tracks.Count == 0 && playlist.TrackCount > 0)
+        {
+            const string fields = "items(track(id,name,duration_ms,track_number,disc_number,type,artists(name),album(id,name,images,artists(name),release_date),external_ids)),next,total";
+            await FollowTrackPagesAsync(
+                    userId,
+                    playlistId,
+                    $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks?market=from_token&limit=50&offset=0&fields={Uri.EscapeDataString(fields)}",
+                    tracks,
+                    ct)
                 .ConfigureAwait(false);
+        }
 
-            if (json == null)
-            {
-                break;
-            }
-
-            using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("items", out var items))
-            {
-                break;
-            }
-
-            var count = 0;
-            foreach (var item in items.EnumerateArray())
-            {
-                count++;
-                var trackEl = item.TryGetProperty("track", out var t) ? t
-                    : item.TryGetProperty("item", out var i) ? i
-                    : default;
-                if (trackEl.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                if (trackEl.TryGetProperty("type", out var type) && type.GetString() != "track")
-                {
-                    continue;
-                }
-
-                var track = ParseTrack(trackEl);
-                if (!string.IsNullOrEmpty(track.Id))
-                {
-                    tracks.Add(track);
-                }
-            }
-
-            if (!doc.RootElement.TryGetProperty("next", out var next) || next.ValueKind == JsonValueKind.Null || count == 0)
-            {
-                break;
-            }
-
-            offset += 50;
+        if (tracks.Count == 0 && playlist.TrackCount > 0)
+        {
+            _logger.LogWarning(
+                "Playlist {PlaylistId} reports {Count} tracks but Spotify returned none readable",
+                playlistId,
+                playlist.TrackCount);
         }
 
         return (playlist, tracks);
@@ -291,7 +286,7 @@ public class SpotifyApiClient
         {
             await _rateLimiter.WaitAsync(ct).ConfigureAwait(false);
             var client = _httpClientFactory.CreateClient();
-            using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.spotify.com/v1" + relativePath);
+            using var request = new HttpRequestMessage(HttpMethod.Get, ToSpotifyUrl(relativePath));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
             using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
 
@@ -341,13 +336,177 @@ public class SpotifyApiClient
                 return null;
             }
 
-            // Use plugin cache TTL days for long-lived objects; short TTL callers still benefit from in-memory reuse via store.
-            await _cache.SetAsync(cacheKey, body, ct).ConfigureAwait(false);
+            if (!IsHollowTrackPage(body))
+            {
+                await _cache.SetAsync(cacheKey, body, ct).ConfigureAwait(false);
+            }
+
             _ = cacheTtl;
             return body;
         }
 
         return null;
+    }
+
+    private async Task FollowTrackPagesAsync(
+        Guid userId,
+        string playlistId,
+        string? next,
+        List<SpotifyTrackInfo> tracks,
+        CancellationToken ct)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pages = 0;
+        while (!string.IsNullOrWhiteSpace(next) && pages < 200)
+        {
+            if (!seen.Add(next))
+            {
+                break;
+            }
+
+            pages++;
+            var json = await GetStringAsync(
+                    userId,
+                    NormalizeSpotifyPath(next),
+                    $"playlist-tracks-v2:{playlistId}:{pages}",
+                    TimeSpan.FromHours(12),
+                    ct)
+                .ConfigureAwait(false);
+            if (json == null)
+            {
+                break;
+            }
+
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
+            {
+                break;
+            }
+
+            AddTracksFromPage(doc.RootElement, tracks);
+            next = ReadNext(doc.RootElement);
+        }
+    }
+
+    private static void AddTracksFromPage(JsonElement page, List<SpotifyTrackInfo> tracks)
+    {
+        if (!page.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var item in items.EnumerateArray())
+        {
+            var trackEl = default(JsonElement);
+            if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("track", out var nested) && nested.ValueKind == JsonValueKind.Object)
+            {
+                trackEl = nested;
+            }
+            else if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("type", out var directType) && directType.GetString() == "track")
+            {
+                trackEl = item;
+            }
+
+            if (trackEl.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (trackEl.TryGetProperty("type", out var type) && type.GetString() is { } typeName && typeName != "track")
+            {
+                continue;
+            }
+
+            var track = ParseTrack(trackEl);
+            if (!string.IsNullOrEmpty(track.Id))
+            {
+                tracks.Add(track);
+            }
+        }
+    }
+
+    private static string? ReadNext(JsonElement page)
+    {
+        if (!page.TryGetProperty("next", out var next) || next.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var value = next.GetString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static string PlaylistTracksPath(string playlistId, int offset)
+    {
+        return $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks?market=from_token&additional_types=track&limit=50&offset={offset}";
+    }
+
+    private static string NormalizePlaylistId(string playlistId)
+    {
+        var value = (playlistId ?? string.Empty).Trim();
+        if (value.StartsWith("spotify:playlist:", StringComparison.OrdinalIgnoreCase))
+        {
+            value = value["spotify:playlist:".Length..];
+        }
+
+        if (value.Contains("/playlist/", StringComparison.OrdinalIgnoreCase))
+        {
+            var start = value.LastIndexOf("/playlist/", StringComparison.OrdinalIgnoreCase);
+            value = value[(start + "/playlist/".Length)..];
+        }
+
+        var query = value.IndexOf('?');
+        if (query >= 0)
+        {
+            value = value[..query];
+        }
+
+        return value.Trim();
+    }
+
+    private static string NormalizeSpotifyPath(string pathOrUrl)
+    {
+        const string prefix = "https://api.spotify.com/v1";
+        if (pathOrUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return pathOrUrl[prefix.Length..];
+        }
+
+        return pathOrUrl.StartsWith('/') ? pathOrUrl : "/" + pathOrUrl;
+    }
+
+    private static string ToSpotifyUrl(string pathOrUrl)
+    {
+        if (pathOrUrl.StartsWith("https://api.spotify.com/", StringComparison.OrdinalIgnoreCase))
+        {
+            return pathOrUrl;
+        }
+
+        return "https://api.spotify.com/v1" + NormalizeSpotifyPath(pathOrUrl);
+    }
+
+    private static bool IsHollowTrackPage(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("total", out var totalEl) || totalEl.ValueKind != JsonValueKind.Number)
+            {
+                return false;
+            }
+
+            var total = totalEl.GetInt32();
+            if (total <= 0 || !doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            return items.GetArrayLength() == 0;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static SpotifyPlaylistInfo ParsePlaylist(JsonElement el)

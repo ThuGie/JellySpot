@@ -857,13 +857,40 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 });
         },
 
+        coercePayload: function (data) {
+            if (typeof data === 'string') {
+                try {
+                    return JSON.parse(data);
+                } catch (err) {
+                    return null;
+                }
+            }
+            return data;
+        },
+
+        coerceTracks: function (tracks) {
+            if (Array.isArray(tracks)) {
+                return tracks;
+            }
+            if (tracks && Array.isArray(tracks.items)) {
+                return tracks.items.map(function (item) {
+                    return item && (item.track || item.Track) ? (item.track || item.Track) : item;
+                }).filter(Boolean);
+            }
+            if (tracks && Array.isArray(tracks.$values)) {
+                return tracks.$values;
+            }
+            return [];
+        },
+
         openPlaylist: function (root, id, fallbackName) {
             const self = this;
             this.setBrowseStatus(root, 'Opening playlist…');
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists/' + encodeURIComponent(id)), dataType: 'json' })
                 .then(function (data) {
+                    data = self.coercePayload(data) || {};
                     const playlist = self.pick(data, 'Playlist', 'playlist') || {};
-                    const tracks = self.pick(data, 'Tracks', 'tracks') || [];
+                    const tracks = self.coerceTracks(self.pick(data, 'Tracks', 'tracks'));
                     const name = self.pick(playlist, 'Name', 'name') || fallbackName || 'Playlist';
                     self.renderTrackPicker(root, {
                         kind: 'playlist',
@@ -895,8 +922,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             this.setBrowseStatus(root, 'Opening album…');
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Albums/' + encodeURIComponent(id)), dataType: 'json' })
                 .then(function (data) {
+                    data = self.coercePayload(data) || {};
                     const album = self.pick(data, 'Album', 'album') || {};
-                    const tracks = self.pick(data, 'Tracks', 'tracks') || [];
+                    const tracks = self.coerceTracks(self.pick(data, 'Tracks', 'tracks'));
                     const name = self.pick(album, 'Name', 'name') || fallbackName || 'Album';
                     self.renderTrackPicker(root, {
                         kind: 'album',
@@ -922,7 +950,12 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 return;
             }
 
-            const tracks = spec.tracks || [];
+            const tracks = this.coerceTracks(spec.tracks);
+            if (!tracks.length) {
+                stage.innerHTML = '<div class="jellyspot-empty">No readable tracks came back from Spotify.</div>';
+                this.setBrowseStatus(root, '0 tracks loaded');
+                return;
+            }
             stage.innerHTML =
                 '<div class="jellyspot-detail">' +
                 '<div class="jellyspot-detail-head">' +
