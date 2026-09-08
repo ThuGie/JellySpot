@@ -16,13 +16,13 @@ After install + **restart Jellyfin**, open the **Home** screen. Next to Home / F
 
 | Tab | Purpose |
 |---|---|
-| **Browse** | Search Spotify / playlists and queue downloads |
+| **Browse** | Per-user library: playlists, saved albums, artists, liked songs, search |
 | **Sync** | Link Spotify, liked songs, monitored playlists |
 | **Queue** | Download status and rematch |
 
-The side-menu **JellySpot** item is the official Jellyfin plugin entry. Clicks open **Home → Browse** for every user. Admin credentials stay under **Dashboard → Plugins → JellySpot**.
+There is no left-menu item. Users open **Home** and click the **Browse** text tab next to Home / Favorites. The first time, they link **their own** Spotify; Browse then shows that account only. Admin app credentials stay under **Dashboard → Plugins → JellySpot**.
 
-If home tabs are missing: install **File Transformation**, confirm JellySpot is **Active** at **1.0.8.0+**, then restart and hard-refresh the web UI.
+If home tabs are missing: install **File Transformation**, confirm JellySpot is **Active**, then restart and hard-refresh the web UI.
 
 ## Icon
 

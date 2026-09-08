@@ -27,14 +27,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasPluginConfiguration, 
 
     public IEnumerable<PluginPageInfo> GetPages()
     {
-        // Official drawer item. Clicks are intercepted in jellyspot-tabs.js so
-        // they open Home → Browse instead of the Dashboard config page.
+        // Admin settings only. Users open Browse from the Home header tabs.
         yield return new PluginPageInfo
         {
             Name = Name,
             DisplayName = "JellySpot",
-            EnableInMainMenu = true,
-            MenuIcon = "music_note",
+            EnableInMainMenu = false,
             EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.config.html"
         };
     }

@@ -57,7 +57,8 @@ public class SpotifyAuthService
             ["state"] = state,
             ["scope"] = string.Join(' ', Scopes),
             ["code_challenge_method"] = "S256",
-            ["code_challenge"] = challenge
+            ["code_challenge"] = challenge,
+            ["show_dialog"] = "true"
         };
 
         return "https://accounts.spotify.com/authorize?" +

@@ -147,7 +147,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> GetMe(CancellationToken ct)
     {
-        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
+        var userId = GetUserId();
         var tokens = await _store.GetTokensAsync(userId, ct).ConfigureAwait(false);
         var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
         return Ok(new
@@ -260,6 +260,75 @@ public class JellySpotController : ControllerBase
             },
             Tracks = tracks
         });
+    }
+
+    [HttpGet("Library")]
+    [Authorize]
+    public async Task<ActionResult> LibraryHome(CancellationToken ct)
+    {
+        var currentUserId = GetUserId();
+        var tokens = await _store.GetTokensAsync(currentUserId, ct).ConfigureAwait(false);
+        if (tokens == null)
+        {
+            return Ok(new { Linked = false });
+        }
+
+        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
+        var playlistsTask = _spotify.GetUserPlaylistsAsync(userId, ct, 40);
+        var albumsTask = _spotify.GetSavedAlbumsAsync(userId, 40, ct);
+        var artistsTask = _spotify.GetFollowedArtistsAsync(userId, 40, ct);
+        var likedTask = _spotify.GetLikedPreviewAsync(userId, 12, ct);
+        await Task.WhenAll(playlistsTask, albumsTask, artistsTask, likedTask).ConfigureAwait(false);
+
+        var playlists = playlistsTask.Result;
+        var liked = likedTask.Result;
+        return Ok(new
+        {
+            Linked = true,
+            SpotifyDisplayName = tokens.DisplayName,
+            SpotifyUserId = tokens.SpotifyUserId,
+            PlaylistCount = playlists.Count,
+            Playlists = playlists.Take(18).ToList(),
+            Albums = albumsTask.Result,
+            AlbumCount = albumsTask.Result.Count,
+            Artists = artistsTask.Result,
+            ArtistCount = artistsTask.Result.Count,
+            LikedCount = liked.Total,
+            LikedPreview = liked.Preview
+        });
+    }
+
+    [HttpGet("Library/Albums")]
+    [Authorize]
+    public async Task<ActionResult> SavedAlbums(CancellationToken ct)
+    {
+        var albums = await _spotify.GetSavedAlbumsAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), 400, ct)
+            .ConfigureAwait(false);
+        return Ok(albums);
+    }
+
+    [HttpGet("Library/Artists")]
+    [Authorize]
+    public async Task<ActionResult> FollowedArtists(CancellationToken ct)
+    {
+        var artists = await _spotify.GetFollowedArtistsAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), 400, ct)
+            .ConfigureAwait(false);
+        return Ok(artists);
+    }
+
+    [HttpGet("Artists/{id}")]
+    [Authorize]
+    public async Task<ActionResult> Artist(string id, CancellationToken ct)
+    {
+        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
+        var artist = await _spotify.GetArtistAsync(userId, id, ct).ConfigureAwait(false);
+        if (artist == null)
+        {
+            return NotFound();
+        }
+
+        var albums = await _spotify.GetArtistAlbumsAsync(userId, id, ct).ConfigureAwait(false);
+        return Ok(new { Artist = artist, Albums = albums });
     }
 
     [HttpGet("Library/Exists")]

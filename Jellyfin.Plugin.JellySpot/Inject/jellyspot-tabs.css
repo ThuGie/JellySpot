@@ -1,3 +1,14 @@
+.mainDrawer a[href*="name=JellySpot"],
+.mainDrawer a[href*="name=jellyspot"],
+.navDrawer a[href*="name=JellySpot"],
+.navDrawer a[href*="name=jellyspot"],
+.MuiDrawer-root a[href*="name=JellySpot"],
+.MuiDrawer-root a[href*="name=jellyspot"],
+#jellyspot-drawer-browse,
+[data-jellyspot-hidden="1"] {
+    display: none !important;
+}
+
 .jellyspot-browse-sections,
 .jellyspot-liked-sections,
 .jellyspot-sync-sections,
@@ -66,6 +77,80 @@
     background: rgba(0, 0, 0, 0.22);
     color: inherit;
     padding: 0 0.9em;
+}
+
+.jellyspot-identity {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45em;
+    align-items: center;
+    margin: -0.35em 0 1em;
+}
+
+.jellyspot-id-name {
+    font-weight: 650;
+    margin-right: 0.35em;
+}
+
+.jellyspot-id-chip,
+.jellyspot-libnav-btn {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    border-radius: 999px;
+    padding: 0.28em 0.75em;
+    font-size: 0.82rem;
+}
+
+.jellyspot-libnav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    margin: 0 0 1em;
+}
+
+.jellyspot-libnav-btn {
+    cursor: pointer;
+}
+
+.jellyspot-libnav-btn.is-active {
+    background: color-mix(in srgb, var(--theme-primary-color, #00a4dc) 22%, transparent);
+    border-color: color-mix(in srgb, var(--theme-primary-color, #00a4dc) 45%, transparent);
+}
+
+.jellyspot-shelf {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(168px, 180px);
+    gap: 0.85em;
+    overflow-x: auto;
+    padding: 0.15em 0 0.85em;
+    scroll-snap-type: x mandatory;
+}
+
+.jellyspot-shelf .jellyspot-card {
+    scroll-snap-align: start;
+}
+
+.jellyspot-card.is-artist img,
+.jellyspot-card.is-artist .jellyspot-card-fallback,
+.jellyspot-detail-cover.is-round,
+.jellyspot-detail-fallback.is-round {
+    border-radius: 999px;
+}
+
+.jellyspot-more {
+    margin-left: auto;
+    border: 0;
+    background: none;
+    color: var(--theme-primary-color, #00a4dc);
+    cursor: pointer;
+    font: inherit;
+}
+
+.jellyspot-empty.is-inline {
+    min-width: 16em;
+    padding: 1.4em 1em;
 }
 
 .jellyspot-status {

@@ -59,7 +59,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 this.setupNativeTabWatchers();
             }
 
-            this.ensureDrawerLinks();
+            this.hideDrawerEntry();
             this.scheduleEnsureNativeTabs();
         },
 
@@ -376,7 +376,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
                 self.attachPluginTabGuard(tabsEl);
                 const changed = self.applyTabs(page, tabsSlider);
-                self.ensureDrawerLinks();
+                self.hideDrawerEntry();
                 if (changed) {
                     log.info('native tab bar ready: browse, liked, sync, queue');
                     if (typeof tabsEl.refresh === 'function') {
@@ -497,17 +497,35 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             return text === 'JellySpot';
         },
 
-        rewriteOfficialMenuLinks: function () {
+        hideDrawerEntry: function () {
             if (this.isPluginSettingsContext() || this.isDashboardContext()) {
                 return;
             }
+            const injected = document.getElementById('jellyspot-drawer-browse');
+            if (injected) {
+                injected.remove();
+            }
             const self = this;
-            document.querySelectorAll('a[href*="name=JellySpot"], a[href*="name=jellyspot"]').forEach(function (link) {
-                if (!self.isDrawerElement(link)) {
+            function hide(el) {
+                if (!el || !self.isDrawerElement(el)) {
                     return;
                 }
-                link.setAttribute('href', '#/home?tab=browse');
-                link.setAttribute('data-jellyspot-rewritten', '1');
+                el.hidden = true;
+                el.setAttribute('data-jellyspot-hidden', '1');
+                el.style.display = 'none';
+                const item = el.closest('.MuiListItem-root, .navMenuOption, li, [role="menuitem"]');
+                if (item && item !== el) {
+                    item.style.display = 'none';
+                }
+            }
+            document.querySelectorAll(
+                'a[href*="name=JellySpot"], a[href*="name=jellyspot"], a[data-jellyspot-rewritten], a[data-jellyspot-hidden]'
+            ).forEach(hide);
+            document.querySelectorAll('.MuiDrawer-root a, .MuiDrawer-root button, .mainDrawer a, .navDrawer a').forEach(function (el) {
+                const text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+                if (text === 'JellySpot') {
+                    hide(el);
+                }
             });
         },
 
@@ -540,7 +558,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         clearTimeout(self._drawerRewriteTimer);
                     }
                     self._drawerRewriteTimer = setTimeout(function () {
-                        self.ensureDrawerLinks();
+                        self.hideDrawerEntry();
                     }, 250);
                 }).observe(document.body, { childList: true, subtree: true });
             }
@@ -551,7 +569,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             log.info('native tab watchers ready');
 
             document.addEventListener('viewshow', function (event) {
-                self.ensureDrawerLinks();
+                self.hideDrawerEntry();
                 if (self.isHomeViewEvent(event) || self.isHomeHash()) {
                     self.scheduleEnsureNativeTabs();
                     return;
@@ -592,24 +610,143 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
         },
 
+        linkedName: function (me) {
+            return this.pick(me, 'SpotifyDisplayName', 'spotifyDisplayName')
+                || this.pick(me, 'SpotifyUserId', 'spotifyUserId')
+                || 'Spotify';
+        },
+
+        isLinked: function (me) {
+            return this.pick(me, 'Linked', 'linked') === true;
+        },
+
+        stopLinkWatch: function () {
+            if (this._linkPollTimer) {
+                clearInterval(this._linkPollTimer);
+                this._linkPollTimer = null;
+            }
+            if (this._linkFocusHandler) {
+                window.removeEventListener('focus', this._linkFocusHandler);
+                this._linkFocusHandler = null;
+            }
+        },
+
+        watchLink: function (onLinked) {
+            const self = this;
+            self.stopLinkWatch();
+            let tries = 0;
+            function check() {
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Me'), dataType: 'json' })
+                    .then(function (me) {
+                        me = self.coercePayload(me) || {};
+                        if (!self.isLinked(me)) {
+                            return;
+                        }
+                        self.stopLinkWatch();
+                        onLinked(me);
+                    });
+            }
+            self._linkFocusHandler = check;
+            window.addEventListener('focus', check);
+            self._linkPollTimer = setInterval(function () {
+                tries += 1;
+                if (tries > 90) {
+                    self.stopLinkWatch();
+                    return;
+                }
+                check();
+            }, 2000);
+        },
+
+        startSpotifyLink: function (statusEl, onLinked) {
+            const self = this;
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/OAuth/Start'), dataType: 'json' })
+                .then(function (res) {
+                    window.open(self.pick(res, 'Url', 'url'), '_blank', 'noopener');
+                    if (statusEl) {
+                        statusEl.textContent = 'Finish signing in with Spotify, then this page will continue.';
+                    }
+                    self.watchLink(onLinked);
+                })
+                .catch(function () {
+                    if (statusEl) {
+                        statusEl.textContent = 'Could not start Spotify login. An admin needs to set the Spotify Client ID under Dashboard → Plugins → JellySpot.';
+                    }
+                });
+        },
+
+        renderLinkGate: function (root, onLinked) {
+            const self = this;
+            root.innerHTML =
+                '<div class="jellyspot-app">' +
+                '<div class="jellyspot-hero"><div>' +
+                '<div class="jellyspot-kicker">Your account</div>' +
+                '<h2 class="sectionTitle jellyspot-title">Link Spotify</h2>' +
+                '<p class="jellyspot-lede">Each Jellyfin user links their own Spotify. After that, Browse shows your playlists and liked songs — not anyone else\'s.</p>' +
+                '</div></div>' +
+                '<div class="jellyspot-toolbar jellyspot-toolbar-primary">' +
+                '<button is="emby-button" type="button" class="raised button-submit jellyspot-link-btn"><span>Link my Spotify</span></button>' +
+                '</div>' +
+                '<div class="jellyspot-status jellyspot-link-status">Not linked yet.</div>' +
+                '</div>';
+            const statusEl = root.querySelector('.jellyspot-link-status');
+            root.querySelector('.jellyspot-link-btn').addEventListener('click', function () {
+                self.startSpotifyLink(statusEl, onLinked);
+            });
+        },
+
+        requireLinked: function (root, onLinked) {
+            const self = this;
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Me'), dataType: 'json' })
+                .then(function (me) {
+                    me = self.coercePayload(me) || {};
+                    if (self.isLinked(me)) {
+                        onLinked(me);
+                        return;
+                    }
+                    delete root.dataset.jellyspotMounted;
+                    self.renderLinkGate(root, function (linkedMe) {
+                        delete root.dataset.jellyspotMounted;
+                        onLinked(linkedMe);
+                    });
+                })
+                .catch(function () {
+                    delete root.dataset.jellyspotMounted;
+                    self.renderLinkGate(root, function (linkedMe) {
+                        delete root.dataset.jellyspotMounted;
+                        onLinked(linkedMe);
+                    });
+                });
+        },
+
         renderBrowse: function (root) {
             const self = this;
-            if (!root.dataset.jellyspotMounted) {
+            this.requireLinked(root, function (me) {
+                if (root.dataset.jellyspotMounted) {
+                    return;
+                }
                 root.dataset.jellyspotMounted = 'true';
+                const who = self.escapeHtml(self.linkedName(me));
                 root.innerHTML =
                     '<div class="jellyspot-app">' +
                     '<div class="jellyspot-hero"><div>' +
-                    '<div class="jellyspot-kicker">Spotify library</div>' +
+                    '<div class="jellyspot-kicker">Your library</div>' +
                     '<h2 class="sectionTitle jellyspot-title">Browse</h2>' +
-                    '<p class="jellyspot-lede">Open a playlist, pick the tracks you want, and queue only those. Existing files are skipped automatically.</p>' +
+                    '<p class="jellyspot-lede">Signed in as ' + who + '. Playlists, saved albums, and artists you follow — pick tracks and queue only those.</p>' +
                     '</div></div>' +
+                    '<div class="jellyspot-identity" hidden></div>' +
                     '<div class="jellyspot-toolbar jellyspot-toolbar-primary">' +
-                    '<div class="jellyspot-search"><input type="search" class="jellyspot-search-input" placeholder="Search tracks, albums, and playlists" /></div>' +
+                    '<div class="jellyspot-search"><input type="search" class="jellyspot-search-input" placeholder="Search tracks, albums, playlists, artists" /></div>' +
                     '<button is="emby-button" type="button" class="raised button-submit jellyspot-search-btn"><span>Search</span></button>' +
-                    '<button is="emby-button" type="button" class="raised jellyspot-playlists-btn"><span>Playlists</span></button>' +
-                    '<button is="emby-button" type="button" class="raised jellyspot-liked-btn"><span>Liked songs</span></button>' +
                     '</div>' +
-                    '<div class="jellyspot-status jellyspot-browse-status">Choose Playlists or search to get started.</div>' +
+                    '<div class="jellyspot-libnav" role="tablist">' +
+                    '<button type="button" class="jellyspot-libnav-btn is-active" data-lib="home">Overview</button>' +
+                    '<button type="button" class="jellyspot-libnav-btn" data-lib="playlists">Playlists</button>' +
+                    '<button type="button" class="jellyspot-libnav-btn" data-lib="albums">Albums</button>' +
+                    '<button type="button" class="jellyspot-libnav-btn" data-lib="artists">Artists</button>' +
+                    '<button type="button" class="jellyspot-libnav-btn" data-lib="liked">Liked</button>' +
+                    '</div>' +
+                    '<div class="jellyspot-status jellyspot-browse-status">Loading your library…</div>' +
                     '<div class="jellyspot-stage jellyspot-browse-results"></div>' +
                     '</div>';
 
@@ -622,14 +759,13 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         self.searchBrowse(root);
                     }
                 });
-                root.querySelector('.jellyspot-playlists-btn').addEventListener('click', function () {
-                    self.loadPlaylists(root);
+                root.querySelectorAll('.jellyspot-libnav-btn').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        self.showLibrarySection(root, btn.getAttribute('data-lib'));
+                    });
                 });
-                root.querySelector('.jellyspot-liked-btn').addEventListener('click', function () {
-                    self.openLikedCollection(root);
-                });
-                this.loadPlaylists(root);
-            }
+                self.loadLibraryHome(root);
+            });
         },
 
         setBrowseStatus: function (root, msg) {
@@ -668,7 +804,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         addCatalogCard: function (grid, spec) {
             const self = this;
             const card = document.createElement('article');
-            card.className = 'jellyspot-card' + (spec.open ? ' is-openable' : '');
+            card.className = 'jellyspot-card' + (spec.open ? ' is-openable' : '') + (spec.avatar ? ' is-artist' : '');
             card.innerHTML =
                 '<span class="jellyspot-card-kind">' + this.escapeHtml(spec.kindLabel) + '</span>' +
                 (spec.image
@@ -757,9 +893,10 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             this.setBrowseStatus(root, 'Searching…');
             ApiClient.ajax({
                 type: 'GET',
-                url: ApiClient.getUrl('JellySpot/Search?q=' + encodeURIComponent(q) + '&type=track,album,playlist&limit=10'),
+                url: ApiClient.getUrl('JellySpot/Search?q=' + encodeURIComponent(q) + '&type=track,album,playlist,artist&limit=10'),
                 dataType: 'json'
             }).then(function (data) {
+                data = self.coercePayload(data) || {};
                 const stage = root.querySelector('.jellyspot-browse-results');
                 stage.innerHTML = '';
                 let count = 0;
@@ -781,18 +918,24 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         self.addCatalogCard(grid, {
                             kindLabel: kind,
                             title: name,
-                            meta: kind === 'track' ? self.artistsOf(item) : (kind === 'album' ? self.artistsOf(item) : 'Playlist'),
+                            meta: kind === 'artist'
+                                ? 'Artist'
+                                : (kind === 'track' || kind === 'album' ? self.artistsOf(item) : 'Playlist'),
                             image: self.coverOf(item),
+                            avatar: kind === 'artist',
                             open: kind === 'playlist'
                                 ? function () { self.openPlaylist(root, id, name); }
                                 : kind === 'album'
                                     ? function () { self.openAlbum(root, id, name); }
-                                    : null,
-                            queue: function () { self.queueItem(kind, id, name, root); }
+                                    : kind === 'artist'
+                                        ? function () { self.openArtist(root, id, name); }
+                                        : null,
+                            queue: kind === 'artist' ? null : function () { self.queueItem(kind, id, name, root); }
                         });
                     });
                     stage.appendChild(grid);
                 }
+                addGroup('Artists', data.artists && data.artists.items, 'artist');
                 addGroup('Playlists', data.playlists && data.playlists.items, 'playlist');
                 addGroup('Albums', data.albums && data.albums.items, 'album');
                 addGroup('Tracks', data.tracks && data.tracks.items, 'track');
@@ -801,7 +944,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     stage.innerHTML = '<div class="jellyspot-empty">No matches. Try a different title, artist, or playlist name.</div>';
                 }
             }).catch(function () {
-                self.setBrowseStatus(root, 'Search failed. Link Spotify under Sync.');
+                self.setBrowseStatus(root, 'Search failed. Link your Spotify first.');
             });
         },
 
@@ -821,24 +964,27 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         renderLiked: function (root) {
             const self = this;
-            if (!root.dataset.jellyspotMounted) {
-                root.dataset.jellyspotMounted = 'true';
-                root.innerHTML =
-                    '<div class="jellyspot-app">' +
-                    '<div class="jellyspot-hero"><div>' +
-                    '<div class="jellyspot-kicker">Library</div>' +
-                    '<h2 class="sectionTitle jellyspot-title">Liked songs</h2>' +
-                    '<p class="jellyspot-lede">Select the liked tracks you want. Anything already on disk is skipped.</p>' +
-                    '</div></div>' +
-                    '<div class="jellyspot-status jellyspot-browse-status">Loading liked songs…</div>' +
-                    '<div class="jellyspot-stage jellyspot-browse-results jellyspot-liked-results"></div>' +
-                    '</div>';
-            }
-            this.openLikedCollection(root);
+            this.requireLinked(root, function (me) {
+                if (!root.dataset.jellyspotMounted) {
+                    root.dataset.jellyspotMounted = 'true';
+                    root.innerHTML =
+                        '<div class="jellyspot-app">' +
+                        '<div class="jellyspot-hero"><div>' +
+                        '<div class="jellyspot-kicker">Your Spotify</div>' +
+                        '<h2 class="sectionTitle jellyspot-title">Liked songs</h2>' +
+                        '<p class="jellyspot-lede">Signed in as ' + self.escapeHtml(self.linkedName(me)) + '. Select the liked tracks you want.</p>' +
+                        '</div></div>' +
+                        '<div class="jellyspot-status jellyspot-browse-status">Loading liked songs…</div>' +
+                        '<div class="jellyspot-stage jellyspot-browse-results jellyspot-liked-results"></div>' +
+                        '</div>';
+                }
+                self.openLikedCollection(root);
+            });
         },
 
         openLikedCollection: function (root) {
             const self = this;
+            this.setLibraryNav(root, 'liked');
             this.setBrowseStatus(root, 'Loading liked songs…');
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/LikedSongs'), dataType: 'json' })
                 .then(function (tracks) {
@@ -1019,7 +1165,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const back = stage.querySelector('.jellyspot-back-btn');
             if (back) {
                 back.addEventListener('click', function () {
-                    self.loadPlaylists(root);
+                    self.loadLibraryHome(root);
                 });
             }
             stage.querySelector('.jellyspot-select-all').addEventListener('click', function () {
@@ -1151,39 +1297,301 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             });
         },
 
-        ensureDrawerLinks: function () {
-            if (this.isPluginSettingsContext() || this.isDashboardContext()) {
-                return;
-            }
-            this.rewriteOfficialMenuLinks();
-            if (document.querySelector('a[href*="name=JellySpot"], a[href*="name=jellyspot"], a[data-jellyspot-rewritten], #jellyspot-drawer-browse')) {
-                return;
-            }
-
-            const host = document.querySelector('.MuiDrawer-paper .MuiList-root:last-of-type') ||
-                document.querySelector('.mainDrawer-scrollContainer') ||
-                document.querySelector('.navDrawer') ||
-                document.querySelector('.mainDrawer');
-            if (!host || document.getElementById('jellyspot-drawer-browse')) {
-                return;
-            }
-
-            const self = this;
-            const btn = document.createElement('a');
-            btn.id = 'jellyspot-drawer-browse';
-            btn.className = 'navMenuOption emby-button MuiListItemButton-root';
-            btn.href = '#/home?tab=browse';
-            btn.innerHTML = '<span class="material-icons navMenuOptionIcon music_note" aria-hidden="true"></span><span class="navMenuOptionText">JellySpot</span>';
-            btn.addEventListener('click', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                self.openUserUi('browse');
+        setLibraryNav: function (root, section) {
+            root.querySelectorAll('.jellyspot-libnav-btn').forEach(function (btn) {
+                btn.classList.toggle('is-active', btn.getAttribute('data-lib') === section);
             });
-            host.appendChild(btn);
+        },
+
+        showLibrarySection: function (root, section) {
+            const id = section || 'home';
+            this.setLibraryNav(root, id);
+            if (id === 'home') {
+                this.loadLibraryHome(root);
+            } else if (id === 'playlists') {
+                this.loadPlaylists(root);
+            } else if (id === 'albums') {
+                this.loadSavedAlbums(root);
+            } else if (id === 'artists') {
+                this.loadFollowedArtists(root);
+            } else {
+                this.openLikedCollection(root);
+            }
+        },
+
+        fillIdentity: function (root, data) {
+            const bar = root.querySelector('.jellyspot-identity');
+            if (!bar) {
+                return;
+            }
+            const name = this.linkedName(data);
+            const playlists = this.pick(data, 'PlaylistCount', 'playlistCount') || (this.pick(data, 'Playlists', 'playlists') || []).length;
+            const albums = this.pick(data, 'AlbumCount', 'albumCount') || (this.pick(data, 'Albums', 'albums') || []).length;
+            const artists = this.pick(data, 'ArtistCount', 'artistCount') || (this.pick(data, 'Artists', 'artists') || []).length;
+            const liked = this.pick(data, 'LikedCount', 'likedCount') || 0;
+            bar.hidden = false;
+            bar.innerHTML =
+                '<span class="jellyspot-id-name">' + this.escapeHtml(name) + '</span>' +
+                '<span class="jellyspot-id-chip">' + playlists + ' playlists</span>' +
+                '<span class="jellyspot-id-chip">' + albums + ' albums</span>' +
+                '<span class="jellyspot-id-chip">' + artists + ' artists</span>' +
+                '<span class="jellyspot-id-chip">' + liked + ' liked</span>';
+        },
+
+        addShelf: function (stage, title, count, onMore, renderCards) {
+            const head = document.createElement('div');
+            head.className = 'jellyspot-section-head';
+            head.innerHTML = '<h3>' + this.escapeHtml(title) + '</h3><span class="jellyspot-muted">' + this.escapeHtml(String(count || 0)) + '</span>';
+            if (onMore) {
+                const more = document.createElement('button');
+                more.type = 'button';
+                more.className = 'jellyspot-more';
+                more.textContent = 'View all';
+                more.addEventListener('click', onMore);
+                head.appendChild(more);
+            }
+            stage.appendChild(head);
+            const row = document.createElement('div');
+            row.className = 'jellyspot-shelf';
+            renderCards(row);
+            if (!row.children.length) {
+                const empty = document.createElement('div');
+                empty.className = 'jellyspot-empty is-inline';
+                empty.textContent = 'Nothing here yet.';
+                row.appendChild(empty);
+            }
+            stage.appendChild(row);
+        },
+
+        loadLibraryHome: function (root) {
+            const self = this;
+            this.setLibraryNav(root, 'home');
+            this.setBrowseStatus(root, 'Loading your library…');
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library'), dataType: 'json' })
+                .then(function (data) {
+                    data = self.coercePayload(data) || {};
+                    if (!self.isLinked(data)) {
+                        delete root.dataset.jellyspotMounted;
+                        self.renderLinkGate(root, function () {
+                            delete root.dataset.jellyspotMounted;
+                            self.renderBrowse(root);
+                        });
+                        return;
+                    }
+                    self.fillIdentity(root, data);
+                    const stage = root.querySelector('.jellyspot-browse-results');
+                    stage.innerHTML = '';
+                    const playlists = self.pick(data, 'Playlists', 'playlists') || [];
+                    const albums = self.pick(data, 'Albums', 'albums') || [];
+                    const artists = self.pick(data, 'Artists', 'artists') || [];
+                    const liked = self.pick(data, 'LikedPreview', 'likedPreview') || [];
+                    const likedCount = self.pick(data, 'LikedCount', 'likedCount') || liked.length;
+
+                    self.addShelf(stage, 'Liked songs', likedCount, function () {
+                        self.showLibrarySection(root, 'liked');
+                    }, function (row) {
+                        liked.forEach(function (track) {
+                            const id = self.pick(track, 'Id', 'id');
+                            const name = self.pick(track, 'Name', 'name') || 'Untitled';
+                            self.addCatalogCard(row, {
+                                kindLabel: 'track',
+                                title: name,
+                                meta: self.artistsOf(track),
+                                image: self.coverOf(track),
+                                queue: function () { self.queueItem('track', id, name, root); }
+                            });
+                        });
+                    });
+
+                    self.addShelf(stage, 'Playlists', self.pick(data, 'PlaylistCount', 'playlistCount') || playlists.length, function () {
+                        self.showLibrarySection(root, 'playlists');
+                    }, function (row) {
+                        playlists.forEach(function (p) {
+                            const id = self.pick(p, 'Id', 'id');
+                            const name = self.pick(p, 'Name', 'name') || id;
+                            self.addCatalogCard(row, {
+                                kindLabel: 'playlist',
+                                title: name,
+                                meta: (self.pick(p, 'TrackCount', 'trackCount') || 0) + ' tracks',
+                                image: self.coverOf(p),
+                                open: function () { self.openPlaylist(root, id, name); },
+                                queue: function () { self.queueItem('playlist', id, name, root); }
+                            });
+                        });
+                    });
+
+                    self.addShelf(stage, 'Saved albums', self.pick(data, 'AlbumCount', 'albumCount') || albums.length, function () {
+                        self.showLibrarySection(root, 'albums');
+                    }, function (row) {
+                        albums.forEach(function (album) {
+                            const id = self.pick(album, 'Id', 'id');
+                            const name = self.pick(album, 'Name', 'name') || id;
+                            self.addCatalogCard(row, {
+                                kindLabel: self.pick(album, 'AlbumType', 'albumType') || 'album',
+                                title: name,
+                                meta: (self.artistsOf(album) || '') + (self.pick(album, 'Year', 'year') ? ' · ' + self.pick(album, 'Year', 'year') : ''),
+                                image: self.coverOf(album),
+                                open: function () { self.openAlbum(root, id, name); },
+                                queue: function () { self.queueItem('album', id, name, root); }
+                            });
+                        });
+                    });
+
+                    self.addShelf(stage, 'Artists you follow', self.pick(data, 'ArtistCount', 'artistCount') || artists.length, function () {
+                        self.showLibrarySection(root, 'artists');
+                    }, function (row) {
+                        artists.forEach(function (artist) {
+                            const id = self.pick(artist, 'Id', 'id');
+                            const name = self.pick(artist, 'Name', 'name') || id;
+                            const genres = self.pick(artist, 'Genres', 'genres') || [];
+                            self.addCatalogCard(row, {
+                                kindLabel: 'artist',
+                                title: name,
+                                meta: (Array.isArray(genres) ? genres.slice(0, 2).join(' · ') : '') || 'Artist',
+                                image: self.coverOf(artist),
+                                avatar: true,
+                                open: function () { self.openArtist(root, id, name); }
+                            });
+                        });
+                    });
+
+                    self.setBrowseStatus(root, 'Your library — open anything, or search across Spotify');
+                })
+                .catch(function () {
+                    self.setBrowseStatus(root, 'Could not load your library.');
+                });
+        },
+
+        loadSavedAlbums: function (root) {
+            const self = this;
+            this.setLibraryNav(root, 'albums');
+            this.setBrowseStatus(root, 'Loading saved albums…');
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library/Albums'), dataType: 'json' })
+                .then(function (albums) {
+                    albums = self.coerceTracks(self.coercePayload(albums)) || albums || [];
+                    const stage = root.querySelector('.jellyspot-browse-results');
+                    stage.innerHTML = '';
+                    const list = Array.isArray(albums) ? albums : [];
+                    if (!list.length) {
+                        stage.innerHTML = '<div class="jellyspot-empty">No saved albums on this Spotify account.</div>';
+                        self.setBrowseStatus(root, 'No saved albums');
+                        return;
+                    }
+                    const grid = document.createElement('div');
+                    grid.className = 'jellyspot-grid';
+                    list.forEach(function (album) {
+                        const id = self.pick(album, 'Id', 'id');
+                        const name = self.pick(album, 'Name', 'name') || id;
+                        self.addCatalogCard(grid, {
+                            kindLabel: self.pick(album, 'AlbumType', 'albumType') || 'album',
+                            title: name,
+                            meta: (self.artistsOf(album) || '') + (self.pick(album, 'Year', 'year') ? ' · ' + self.pick(album, 'Year', 'year') : ''),
+                            image: self.coverOf(album),
+                            open: function () { self.openAlbum(root, id, name); },
+                            queue: function () { self.queueItem('album', id, name, root); }
+                        });
+                    });
+                    stage.appendChild(grid);
+                    self.setBrowseStatus(root, list.length + ' saved albums');
+                })
+                .catch(function () {
+                    self.setBrowseStatus(root, 'Could not load saved albums.');
+                });
+        },
+
+        loadFollowedArtists: function (root) {
+            const self = this;
+            this.setLibraryNav(root, 'artists');
+            this.setBrowseStatus(root, 'Loading artists…');
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library/Artists'), dataType: 'json' })
+                .then(function (artists) {
+                    artists = self.coercePayload(artists);
+                    const stage = root.querySelector('.jellyspot-browse-results');
+                    stage.innerHTML = '';
+                    const list = Array.isArray(artists) ? artists : [];
+                    if (!list.length) {
+                        stage.innerHTML = '<div class="jellyspot-empty">You are not following any artists yet.</div>';
+                        self.setBrowseStatus(root, 'No followed artists');
+                        return;
+                    }
+                    const grid = document.createElement('div');
+                    grid.className = 'jellyspot-grid';
+                    list.forEach(function (artist) {
+                        const id = self.pick(artist, 'Id', 'id');
+                        const name = self.pick(artist, 'Name', 'name') || id;
+                        const genres = self.pick(artist, 'Genres', 'genres') || [];
+                        self.addCatalogCard(grid, {
+                            kindLabel: 'artist',
+                            title: name,
+                            meta: (Array.isArray(genres) ? genres.slice(0, 2).join(' · ') : '') || 'Artist',
+                            image: self.coverOf(artist),
+                            avatar: true,
+                            open: function () { self.openArtist(root, id, name); }
+                        });
+                    });
+                    stage.appendChild(grid);
+                    self.setBrowseStatus(root, list.length + ' artists');
+                })
+                .catch(function () {
+                    self.setBrowseStatus(root, 'Could not load artists.');
+                });
+        },
+
+        openArtist: function (root, id, fallbackName) {
+            const self = this;
+            this.setBrowseStatus(root, 'Opening artist…');
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Artists/' + encodeURIComponent(id)), dataType: 'json' })
+                .then(function (data) {
+                    data = self.coercePayload(data) || {};
+                    const artist = self.pick(data, 'Artist', 'artist') || {};
+                    const albums = self.pick(data, 'Albums', 'albums') || [];
+                    const name = self.pick(artist, 'Name', 'name') || fallbackName || 'Artist';
+                    const genres = self.pick(artist, 'Genres', 'genres') || [];
+                    const genreText = Array.isArray(genres) ? genres.slice(0, 4).join(' · ') : '';
+                    const stage = root.querySelector('.jellyspot-browse-results');
+                    stage.innerHTML =
+                        '<div class="jellyspot-detail">' +
+                        '<div class="jellyspot-detail-head is-artist">' +
+                        (self.coverOf(artist)
+                            ? '<img class="jellyspot-detail-cover is-round" src="' + self.escapeHtml(self.coverOf(artist)) + '" alt="" />'
+                            : '<div class="jellyspot-detail-fallback is-round"></div>') +
+                        '<div class="jellyspot-detail-meta">' +
+                        '<div class="jellyspot-kicker">artist</div>' +
+                        '<h3>' + self.escapeHtml(name) + '</h3>' +
+                        '<p class="jellyspot-lede">' + self.escapeHtml(genreText) + '</p>' +
+                        '<button is="emby-button" type="button" class="raised jellyspot-back-btn"><span>Back</span></button>' +
+                        '</div></div></div>';
+                    const grid = document.createElement('div');
+                    grid.className = 'jellyspot-grid';
+                    albums.forEach(function (album) {
+                        const albumId = self.pick(album, 'Id', 'id');
+                        const albumName = self.pick(album, 'Name', 'name') || albumId;
+                        self.addCatalogCard(grid, {
+                            kindLabel: self.pick(album, 'AlbumType', 'albumType') || 'album',
+                            title: albumName,
+                            meta: (self.pick(album, 'Year', 'year') || '') + (self.pick(album, 'TrackCount', 'trackCount') ? ' · ' + self.pick(album, 'TrackCount', 'trackCount') + ' tracks' : ''),
+                            image: self.coverOf(album),
+                            open: function () { self.openAlbum(root, albumId, albumName); },
+                            queue: function () { self.queueItem('album', albumId, albumName, root); }
+                        });
+                    });
+                    stage.appendChild(grid);
+                    const back = stage.querySelector('.jellyspot-back-btn');
+                    if (back) {
+                        back.addEventListener('click', function () {
+                            self.showLibrarySection(root, 'artists');
+                        });
+                    }
+                    self.setBrowseStatus(root, albums.length + ' releases — open an album to pick tracks');
+                })
+                .catch(function () {
+                    self.setBrowseStatus(root, 'Could not open that artist.');
+                });
         },
 
         loadPlaylists: function (root) {
             const self = this;
+            this.setLibraryNav(root, 'playlists');
             this.setBrowseStatus(root, 'Loading playlists…');
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists'), dataType: 'json' })
                 .then(function (playlists) {
@@ -1191,7 +1599,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     stage.innerHTML = '';
                     const list = playlists || [];
                     if (!list.length) {
-                        stage.innerHTML = '<div class="jellyspot-empty">No playlists found. Link Spotify under Sync if this looks wrong.</div>';
+                        stage.innerHTML = '<div class="jellyspot-empty">No playlists found for your Spotify account.</div>';
                         self.setBrowseStatus(root, 'No playlists');
                         return;
                     }
@@ -1226,9 +1634,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     '<div class="jellyspot-hero"><div>' +
                     '<div class="jellyspot-kicker">Account</div>' +
                     '<h2 class="sectionTitle jellyspot-title">Sync</h2>' +
-                    '<p class="jellyspot-lede">Link Spotify and choose what JellySpot should keep mirrored automatically.</p>' +
+                    '<p class="jellyspot-lede">Link your Spotify account. Other Jellyfin users keep their own links and playlists.</p>' +
                     '</div></div>' +
-                    '<p class="jellyspot-status">Link your Spotify account and choose what to keep mirrored.</p>' +
+                    '<p class="jellyspot-status">This link is only for your Jellyfin user.</p>' +
                     '<div class="jellyspot-status jellyspot-link-status">Checking link status…</div>' +
                     '<div class="jellyspot-toolbar">' +
                     '<button is="emby-button" type="button" class="raised button-submit jellyspot-link-btn"><span>Link Spotify</span></button>' +
@@ -1467,18 +1875,3 @@ if (typeof window.jellySpotPlugin === 'undefined') {
     });
 }
 
-(function () {
-    function patch() {
-        var icon = document.querySelector('a[href*="name=JellySpot"] .MuiListItemIcon-root');
-        if (!icon || icon.dataset.jellyspotMenuIcon) {
-            return;
-        }
-        icon.dataset.jellyspotMenuIcon = '1';
-        icon.innerHTML = '<span class="material-icons notranslate MuiIcon-root MuiIcon-fontSizeMedium" aria-hidden="true">music_note</span>';
-    }
-
-    if (document.body) {
-        new MutationObserver(patch).observe(document.body, { childList: true, subtree: true });
-        patch();
-    }
-})();

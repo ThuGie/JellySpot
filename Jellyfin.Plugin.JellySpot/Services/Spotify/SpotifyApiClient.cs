@@ -35,11 +35,11 @@ public class SpotifyApiClient
         return await GetStringAsync(userId, path, $"search:{types}:{query}:{limit}:{offset}", TimeSpan.FromHours(1), ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<SpotifyPlaylistInfo>> GetUserPlaylistsAsync(Guid userId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SpotifyPlaylistInfo>> GetUserPlaylistsAsync(Guid userId, CancellationToken ct = default, int maxItems = int.MaxValue)
     {
         var playlists = new List<SpotifyPlaylistInfo>();
         var offset = 0;
-        while (true)
+        while (playlists.Count < maxItems)
         {
             var path = $"/me/playlists?limit=50&offset={offset}";
             var json = await GetStringAsync(userId, path, $"me:playlists:{offset}", TimeSpan.FromHours(6), ct).ConfigureAwait(false);
@@ -57,9 +57,13 @@ public class SpotifyApiClient
             foreach (var item in items.EnumerateArray())
             {
                 playlists.Add(ParsePlaylist(item));
+                if (playlists.Count >= maxItems)
+                {
+                    break;
+                }
             }
 
-            if (!doc.RootElement.TryGetProperty("next", out var next) || next.ValueKind == JsonValueKind.Null)
+            if (playlists.Count >= maxItems || !doc.RootElement.TryGetProperty("next", out var next) || next.ValueKind == JsonValueKind.Null)
             {
                 break;
             }
@@ -140,7 +144,7 @@ public class SpotifyApiClient
         var offset = 0;
         while (true)
         {
-            var path = $"/me/tracks?limit=50&offset={offset}";
+            var path = $"/me/tracks?market=from_token&limit=50&offset={offset}";
             var json = await GetStringAsync(userId, path, $"me:tracks:{offset}", TimeSpan.FromHours(12), ct).ConfigureAwait(false);
             if (json == null)
             {
@@ -195,7 +199,7 @@ public class SpotifyApiClient
 
     public async Task<IReadOnlyList<SpotifyTrackInfo>> GetAlbumTracksAsync(Guid userId, string albumId, CancellationToken ct = default)
     {
-        var albumJson = await GetStringAsync(userId, $"/albums/{albumId}", $"album:{albumId}", TimeSpan.FromDays(10), ct)
+        var albumJson = await GetStringAsync(userId, $"/albums/{albumId}?market=from_token", $"album-v2:{albumId}", TimeSpan.FromDays(10), ct)
             .ConfigureAwait(false);
         string? albumName = null;
         string? albumArtist = null;
@@ -225,7 +229,7 @@ public class SpotifyApiClient
         var offset = 0;
         while (true)
         {
-            var path = $"/albums/{albumId}/tracks?limit=50&offset={offset}";
+            var path = $"/albums/{albumId}/tracks?market=from_token&limit=50&offset={offset}";
             var json = await GetStringAsync(userId, path, $"album-tracks:{albumId}:{offset}", TimeSpan.FromDays(10), ct)
                 .ConfigureAwait(false);
             if (json == null)
@@ -263,6 +267,208 @@ public class SpotifyApiClient
         return tracks;
     }
 
+    public async Task<(int Total, IReadOnlyList<SpotifyTrackInfo> Preview)> GetLikedPreviewAsync(
+        Guid userId,
+        int previewCount,
+        CancellationToken ct = default)
+    {
+        var limit = Math.Clamp(previewCount, 1, 50);
+        var json = await GetStringAsync(
+                userId,
+                $"/me/tracks?market=from_token&limit={limit}&offset=0",
+                $"me:tracks-preview:{limit}",
+                TimeSpan.FromHours(6),
+                ct)
+            .ConfigureAwait(false);
+        if (json == null)
+        {
+            return (0, []);
+        }
+
+        using var doc = JsonDocument.Parse(json);
+        var total = doc.RootElement.TryGetProperty("total", out var totalEl) && totalEl.ValueKind == JsonValueKind.Number
+            ? totalEl.GetInt32()
+            : 0;
+        var tracks = new List<SpotifyTrackInfo>();
+        if (doc.RootElement.TryGetProperty("items", out var items))
+        {
+            foreach (var item in items.EnumerateArray())
+            {
+                if (!item.TryGetProperty("track", out var trackEl) || trackEl.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var track = ParseTrack(trackEl);
+                if (!string.IsNullOrEmpty(track.Id))
+                {
+                    tracks.Add(track);
+                }
+            }
+        }
+
+        return (total, tracks);
+    }
+
+    public async Task<IReadOnlyList<SpotifyAlbumInfo>> GetSavedAlbumsAsync(Guid userId, int maxItems, CancellationToken ct = default)
+    {
+        var albums = new List<SpotifyAlbumInfo>();
+        var offset = 0;
+        while (albums.Count < maxItems)
+        {
+            var json = await GetStringAsync(
+                    userId,
+                    $"/me/albums?market=from_token&limit=50&offset={offset}",
+                    $"me:albums:{offset}",
+                    TimeSpan.FromHours(6),
+                    ct)
+                .ConfigureAwait(false);
+            if (json == null)
+            {
+                break;
+            }
+
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.GetArrayLength() == 0)
+            {
+                break;
+            }
+
+            foreach (var item in items.EnumerateArray())
+            {
+                var albumEl = item.TryGetProperty("album", out var nested) ? nested : item;
+                var album = ParseAlbum(albumEl);
+                if (!string.IsNullOrEmpty(album.Id))
+                {
+                    albums.Add(album);
+                }
+
+                if (albums.Count >= maxItems)
+                {
+                    break;
+                }
+            }
+
+            if (!doc.RootElement.TryGetProperty("next", out var next) || next.ValueKind == JsonValueKind.Null)
+            {
+                break;
+            }
+
+            offset += 50;
+        }
+
+        return albums;
+    }
+
+    public async Task<IReadOnlyList<SpotifyArtistInfo>> GetFollowedArtistsAsync(Guid userId, int maxItems, CancellationToken ct = default)
+    {
+        var artists = new List<SpotifyArtistInfo>();
+        string? next = $"/me/following?type=artist&limit=50";
+        var pages = 0;
+        while (!string.IsNullOrEmpty(next) && artists.Count < maxItems && pages < 20)
+        {
+            pages++;
+            var json = await GetStringAsync(
+                    userId,
+                    NormalizeSpotifyPath(next),
+                    $"me:following:{pages}",
+                    TimeSpan.FromHours(6),
+                    ct)
+                .ConfigureAwait(false);
+            if (json == null)
+            {
+                break;
+            }
+
+            using var doc = JsonDocument.Parse(json);
+            var page = doc.RootElement.TryGetProperty("artists", out var artistsEl) ? artistsEl : doc.RootElement;
+            if (!page.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+            {
+                break;
+            }
+
+            foreach (var item in items.EnumerateArray())
+            {
+                var artist = ParseArtist(item);
+                if (!string.IsNullOrEmpty(artist.Id))
+                {
+                    artists.Add(artist);
+                }
+
+                if (artists.Count >= maxItems)
+                {
+                    break;
+                }
+            }
+
+            next = ReadNext(page);
+        }
+
+        return artists;
+    }
+
+    public async Task<SpotifyArtistInfo?> GetArtistAsync(Guid userId, string artistId, CancellationToken ct = default)
+    {
+        var json = await GetStringAsync(
+                userId,
+                $"/artists/{Uri.EscapeDataString(artistId)}",
+                $"artist:{artistId}",
+                TimeSpan.FromDays(10),
+                ct)
+            .ConfigureAwait(false);
+        if (json == null)
+        {
+            return null;
+        }
+
+        using var doc = JsonDocument.Parse(json);
+        var artist = ParseArtist(doc.RootElement);
+        return string.IsNullOrEmpty(artist.Id) ? null : artist;
+    }
+
+    public async Task<IReadOnlyList<SpotifyAlbumInfo>> GetArtistAlbumsAsync(Guid userId, string artistId, CancellationToken ct = default)
+    {
+        var albums = new List<SpotifyAlbumInfo>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var offset = 0;
+        while (true)
+        {
+            var path = $"/artists/{Uri.EscapeDataString(artistId)}/albums?include_groups=album,single&market=from_token&limit=50&offset={offset}";
+            var json = await GetStringAsync(userId, path, $"artist-albums:{artistId}:{offset}", TimeSpan.FromDays(10), ct)
+                .ConfigureAwait(false);
+            if (json == null)
+            {
+                break;
+            }
+
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.GetArrayLength() == 0)
+            {
+                break;
+            }
+
+            foreach (var item in items.EnumerateArray())
+            {
+                var album = ParseAlbum(item);
+                if (string.IsNullOrEmpty(album.Id) || !seen.Add(album.Id))
+                {
+                    continue;
+                }
+
+                albums.Add(album);
+            }
+
+            if (!doc.RootElement.TryGetProperty("next", out var next) || next.ValueKind == JsonValueKind.Null)
+            {
+                break;
+            }
+
+            offset += 50;
+        }
+
+        return albums;
+    }
+
     private async Task<string?> GetStringAsync(
         Guid userId,
         string relativePath,
@@ -270,7 +476,8 @@ public class SpotifyApiClient
         TimeSpan cacheTtl,
         CancellationToken ct)
     {
-        var cached = await _cache.GetAsync(cacheKey, ct).ConfigureAwait(false);
+        var scopedKey = userId.ToString("N") + ":" + cacheKey;
+        var cached = await _cache.GetAsync(scopedKey, ct).ConfigureAwait(false);
         if (cached != null)
         {
             return cached;
@@ -338,7 +545,7 @@ public class SpotifyApiClient
 
             if (!IsHollowTrackPage(body))
             {
-                await _cache.SetAsync(cacheKey, body, ct).ConfigureAwait(false);
+                await _cache.SetAsync(scopedKey, body, ct).ConfigureAwait(false);
             }
 
             _ = cacheTtl;
@@ -587,6 +794,73 @@ public class SpotifyApiClient
 
         track.AlbumArtist ??= track.Artists.FirstOrDefault();
         return track;
+    }
+
+    private static SpotifyAlbumInfo ParseAlbum(JsonElement el)
+    {
+        var album = new SpotifyAlbumInfo
+        {
+            Id = el.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty,
+            Name = el.TryGetProperty("name", out var name) ? name.GetString() ?? string.Empty : string.Empty,
+            ImageUrl = GetBestImage(el),
+            AlbumType = el.TryGetProperty("album_type", out var type) ? type.GetString() : null
+        };
+
+        if (el.TryGetProperty("total_tracks", out var total) && total.ValueKind == JsonValueKind.Number)
+        {
+            album.TrackCount = total.GetInt32();
+        }
+
+        if (el.TryGetProperty("artists", out var artists) && artists.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var a in artists.EnumerateArray())
+            {
+                if (a.TryGetProperty("name", out var an) && an.GetString() is { } artistName)
+                {
+                    album.Artists.Add(artistName);
+                }
+            }
+        }
+
+        if (el.TryGetProperty("release_date", out var rd))
+        {
+            var s = rd.GetString();
+            if (!string.IsNullOrEmpty(s) && s.Length >= 4 && int.TryParse(s[..4], out var y))
+            {
+                album.Year = y;
+            }
+        }
+
+        return album;
+    }
+
+    private static SpotifyArtistInfo ParseArtist(JsonElement el)
+    {
+        var artist = new SpotifyArtistInfo
+        {
+            Id = el.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty,
+            Name = el.TryGetProperty("name", out var name) ? name.GetString() ?? string.Empty : string.Empty,
+            ImageUrl = GetBestImage(el)
+        };
+
+        if (el.TryGetProperty("genres", out var genres) && genres.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var g in genres.EnumerateArray())
+            {
+                if (g.GetString() is { } genre)
+                {
+                    artist.Genres.Add(genre);
+                }
+            }
+        }
+
+        if (el.TryGetProperty("followers", out var followers) && followers.TryGetProperty("total", out var total)
+            && total.ValueKind == JsonValueKind.Number)
+        {
+            artist.Followers = total.GetInt32();
+        }
+
+        return artist;
     }
 
     private static string? GetBestImage(JsonElement el)

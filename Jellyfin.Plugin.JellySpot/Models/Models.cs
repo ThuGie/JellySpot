@@ -173,6 +173,36 @@ public class SpotifyPlaylistInfo
     public string? OwnerId { get; set; }
 }
 
+public class SpotifyAlbumInfo
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    public List<string> Artists { get; set; } = [];
+
+    public string? ImageUrl { get; set; }
+
+    public int TrackCount { get; set; }
+
+    public int? Year { get; set; }
+
+    public string? AlbumType { get; set; }
+}
+
+public class SpotifyArtistInfo
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    public string? ImageUrl { get; set; }
+
+    public List<string> Genres { get; set; } = [];
+
+    public int Followers { get; set; }
+}
+
 public class MatchCandidate
 {
     public string VideoId { get; set; } = string.Empty;
