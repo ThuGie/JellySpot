@@ -2,6 +2,32 @@
     display: inline-flex !important;
 }
 
+.jellyspot-header-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.15em;
+    padding: 0 0.4em 0.15em;
+}
+
+.jellyspot-header-tab {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 500;
+    padding: 0.55em 0.85em;
+    opacity: 0.72;
+    cursor: pointer;
+}
+
+.jellyspot-header-tab:hover,
+.headerTabs [data-jellyspot-tab].is-active,
+.jellyspot-header-tab.is-active {
+    opacity: 1;
+}
+
 .jellyspot-browse-sections,
 .jellyspot-liked-sections,
 .jellyspot-sync-sections,

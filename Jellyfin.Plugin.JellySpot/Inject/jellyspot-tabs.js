@@ -59,8 +59,50 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 this.setupNativeTabWatchers();
             }
 
+            this.patchForeignTabManagers();
             this.scheduleEnsureNativeTabs();
             this.watchHeaderTabs();
+        },
+
+        patchForeignTabManagers: function () {
+            const self = this;
+            function wrap(obj) {
+                if (!obj || typeof obj.removeUnplannedTabButtons !== 'function' ||
+                    obj.removeUnplannedTabButtons._jellyspotWrapped) {
+                    return !!obj && obj.removeUnplannedTabButtons && obj.removeUnplannedTabButtons._jellyspotWrapped;
+                }
+                const original = obj.removeUnplannedTabButtons;
+                const wrapped = function (tabsSlider, plannedButtons) {
+                    if (tabsSlider && Array.isArray(plannedButtons)) {
+                        Array.from(tabsSlider.querySelectorAll('[data-jellyspot-tab]')).forEach(function (btn) {
+                            if (plannedButtons.indexOf(btn) < 0) {
+                                plannedButtons.push(btn);
+                            }
+                        });
+                    }
+                    const result = original.apply(this, arguments);
+                    setTimeout(function () {
+                        self.ensureNativeTabs();
+                    }, 50);
+                    return result;
+                };
+                wrapped._jellyspotWrapped = true;
+                obj.removeUnplannedTabButtons = wrapped;
+                log.info('JellySeerr will keep JellySpot Home tabs');
+                return true;
+            }
+
+            if (wrap(window.jellySeerrPlugin) || this._foreignPatchTimer) {
+                return;
+            }
+            let tries = 0;
+            this._foreignPatchTimer = setInterval(function () {
+                tries += 1;
+                if (wrap(window.jellySeerrPlugin) || tries > 40) {
+                    clearInterval(self._foreignPatchTimer);
+                    self._foreignPatchTimer = null;
+                }
+            }, 250);
         },
 
         isHomeHash: function () {
@@ -182,9 +224,56 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         },
 
         cleanupHeaderButtons: function () {
-            document.querySelectorAll('.headerTabs [data-jellyspot-tab]').forEach(function (btn) {
+            document.querySelectorAll('.headerTabs [data-jellyspot-tab], #jellyspot-header-tabs').forEach(function (btn) {
                 btn.remove();
             });
+        },
+
+        removeFallbackBar: function () {
+            const bar = document.getElementById('jellyspot-header-tabs');
+            if (bar) {
+                bar.remove();
+            }
+        },
+
+        ensureFallbackBar: function (page) {
+            const self = this;
+            let bar = document.getElementById('jellyspot-header-tabs');
+            const host = document.querySelector('.headerTabs') ||
+                document.querySelector('.skinHeader') ||
+                page;
+            if (!host) {
+                return;
+            }
+            if (!bar) {
+                bar = document.createElement('div');
+                bar.id = 'jellyspot-header-tabs';
+                bar.className = 'jellyspot-header-tabs';
+                Object.keys(self.TAB_DEFS).forEach(function (id) {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'jellyspot-header-tab';
+                    button.setAttribute('data-jellyspot-tab', id);
+                    button.textContent = self.TAB_DEFS[id].defaultTitle;
+                    button.addEventListener('click', function () {
+                        self.showPluginTab(id);
+                        const native = document.querySelector('.headerTabs [data-jellyspot-tab="' + id + '"]');
+                        if (native && native !== button && typeof native.click === 'function') {
+                            native.click();
+                        }
+                    });
+                    bar.appendChild(button);
+                });
+                host.appendChild(bar);
+                log.info('fallback Home text tabs attached');
+            }
+            if (page) {
+                Object.keys(self.TAB_DEFS).forEach(function (id) {
+                    if (!page.querySelector('.tabContent[data-jellyspot-tab="' + id + '"]')) {
+                        page.appendChild(self.createTabPanel(id));
+                    }
+                });
+            }
         },
 
         pick: function (obj) {
@@ -402,25 +491,38 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     return;
                 }
 
+                self.patchForeignTabManagers();
                 const page = document.getElementById('indexPage');
                 const tabsSlider = self.findTabSlider();
                 const tabsEl = self.findTabsEl();
-                if (!page || !tabsSlider || !tabsEl || !self.homePageExists()) {
+                if (!page || !self.homePageExists()) {
                     self._tabsEnsureQueued = true;
                     return;
                 }
 
-                self.attachPluginTabGuard(tabsEl);
+                if (!tabsSlider) {
+                    self.ensureFallbackBar(page);
+                    return;
+                }
+
+                if (tabsEl) {
+                    self.attachPluginTabGuard(tabsEl);
+                }
                 const changed = self.applyTabs(page, tabsSlider);
                 if (changed) {
                     log.info('native tab bar ready: browse, liked, sync, queue');
-                    if (typeof tabsEl.refresh === 'function') {
+                    if (tabsEl && typeof tabsEl.refresh === 'function') {
                         try {
                             tabsEl.refresh();
                         } catch (err) {
                             // scroller refresh is best-effort
                         }
                     }
+                }
+                if (!tabsSlider.querySelector('[data-jellyspot-tab]')) {
+                    self.ensureFallbackBar(page);
+                } else {
+                    self.removeFallbackBar();
                 }
                 self.openRequestedTab();
             }).catch(function (err) {
