@@ -27,12 +27,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasPluginConfiguration, 
 
     public IEnumerable<PluginPageInfo> GetPages()
     {
-        // Admin settings only. Users open Browse from the Home header tabs.
         yield return new PluginPageInfo
         {
             Name = Name,
             DisplayName = "JellySpot",
-            EnableInMainMenu = false,
+            EnableInMainMenu = true,
+            MenuIcon = "settings",
             EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.config.html"
         };
     }

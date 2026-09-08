@@ -1,12 +1,5 @@
-.mainDrawer a[href*="name=JellySpot"],
-.mainDrawer a[href*="name=jellyspot"],
-.navDrawer a[href*="name=JellySpot"],
-.navDrawer a[href*="name=jellyspot"],
-.MuiDrawer-root a[href*="name=JellySpot"],
-.MuiDrawer-root a[href*="name=jellyspot"],
-#jellyspot-drawer-browse,
-[data-jellyspot-hidden="1"] {
-    display: none !important;
+.headerTabs [data-jellyspot-tab] {
+    display: inline-flex !important;
 }
 
 .jellyspot-browse-sections,

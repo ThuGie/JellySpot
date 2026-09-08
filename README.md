@@ -20,7 +20,9 @@ After install + **restart Jellyfin**, open the **Home** screen. Next to Home / F
 | **Sync** | Link Spotify, liked songs, monitored playlists |
 | **Queue** | Download status and rematch |
 
-There is no left-menu item. Users open **Home** and click the **Browse** text tab next to Home / Favorites. The first time, they link **their own** Spotify; Browse then shows that account only. Admin app credentials stay under **Dashboard → Plugins → JellySpot**.
+**Admin:** left Dashboard menu → **JellySpot** (settings), same pattern as JellySeerr / StreamReady.
+
+**Everyone:** Home header tabs next to Home / Favorites — **Browse**, **Liked**, **Sync**, **Queue**. First time, link your own Spotify; Browse then shows that account only.
 
 If home tabs are missing: install **File Transformation**, confirm JellySpot is **Active**, then restart and hard-refresh the web UI.
 
