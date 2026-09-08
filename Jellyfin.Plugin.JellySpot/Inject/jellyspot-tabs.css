@@ -1,36 +1,121 @@
 .jellyspot-browse-sections,
+.jellyspot-liked-sections,
 .jellyspot-sync-sections,
 .jellyspot-queue-sections {
-    padding: 1.25em 1.5em 2em;
+    padding: 0.25em 0 2.25em;
+}
+
+.jellyspot-app {
+    max-width: 1180px;
+}
+
+.jellyspot-hero {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.25em;
+    margin: 0 0 1.15em;
+}
+
+.jellyspot-kicker {
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--secondaryTextColor);
+    margin-bottom: 0.35em;
+}
+
+.jellyspot-title {
+    margin: 0;
+}
+
+.jellyspot-lede {
+    margin: 0.45em 0 0;
+    max-width: 46rem;
+    color: var(--secondaryTextColor);
+    line-height: 1.45;
 }
 
 .jellyspot-toolbar {
     display: flex;
-    gap: 0.5em;
+    gap: 0.55em;
     flex-wrap: wrap;
-    align-items: flex-end;
-    margin: 1em 0;
+    align-items: center;
+    margin: 0 0 1em;
+}
+
+.jellyspot-toolbar-primary {
+    padding: 0.75em;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--cardBackground, #202020) 88%, transparent);
+}
+
+.jellyspot-search {
+    flex: 1 1 280px;
+    min-width: 220px;
+    margin: 0;
+}
+
+.jellyspot-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    height: 2.55em;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.22);
+    color: inherit;
+    padding: 0 0.9em;
 }
 
 .jellyspot-status {
     color: var(--secondaryTextColor);
-    margin: 0.5em 0 1em;
+    margin: 0.15em 0 0.85em;
+}
+
+.jellyspot-stage {
+    min-height: 12em;
+}
+
+.jellyspot-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1em;
+    margin: 1.25em 0 0.7em;
+}
+
+.jellyspot-section-head h3 {
+    margin: 0;
+    font-size: 1.05rem;
 }
 
 .jellyspot-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 0.85em;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 0.9em;
 }
 
 .jellyspot-card {
-    padding: 0.75em;
-    border-radius: 10px;
-    background: var(--cardBackground, rgba(255, 255, 255, 0.04));
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.45em;
+    padding: 0.7em;
+    border-radius: 14px;
+    background: var(--cardBackground, rgba(255, 255, 255, 0.04));
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.jellyspot-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+
+.jellyspot-card.is-openable {
+    cursor: pointer;
 }
 
 .jellyspot-card img,
@@ -38,11 +123,205 @@
     width: 100%;
     aspect-ratio: 1;
     object-fit: cover;
-    border-radius: 8px;
+    border-radius: 10px;
 }
 
 .jellyspot-card-fallback {
+    background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.16), transparent 42%),
+        rgba(255, 255, 255, 0.06);
+}
+
+.jellyspot-card-kind {
+    position: absolute;
+    top: 1em;
+    left: 1em;
+    padding: 0.15em 0.45em;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: rgba(0, 0, 0, 0.62);
+}
+
+.jellyspot-card strong {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.3;
+}
+
+.jellyspot-card .fieldDescription {
+    min-height: 1.2em;
+}
+
+.jellyspot-card-actions {
+    display: flex;
+    gap: 0.4em;
+    margin-top: auto;
+}
+
+.jellyspot-card-actions button {
+    flex: 1;
+}
+
+.jellyspot-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 1em;
+}
+
+.jellyspot-detail-head {
+    display: grid;
+    grid-template-columns: 148px 1fr;
+    gap: 1.15em;
+    padding: 1em;
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--cardBackground, #202020) 92%, transparent);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.jellyspot-detail-cover,
+.jellyspot-detail-fallback {
+    width: 148px;
+    height: 148px;
+    border-radius: 14px;
+    object-fit: cover;
+}
+
+.jellyspot-detail-fallback {
+    background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.16), transparent 42%),
+        rgba(255, 255, 255, 0.06);
+}
+
+.jellyspot-detail-meta h3 {
+    margin: 0.15em 0 0.35em;
+    font-size: 1.55rem;
+}
+
+.jellyspot-actionbar {
+    position: sticky;
+    top: 4.6em;
+    z-index: 4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    align-items: center;
+    padding: 0.65em 0.75em;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--headerBackgroundColor, #101010) 88%, transparent);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(10px);
+}
+
+.jellyspot-actionbar .jellyspot-count {
+    margin-left: auto;
+    color: var(--secondaryTextColor);
+    font-size: 0.92em;
+}
+
+.jellyspot-track-filter {
+    min-width: 180px;
+    flex: 1 1 180px;
+    height: 2.3em;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.2);
+    color: inherit;
+    padding: 0 0.75em;
+}
+
+.jellyspot-track-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.jellyspot-track-table th {
+    text-align: left;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--secondaryTextColor);
+    padding: 0.55em 0.65em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.jellyspot-track-table td {
+    padding: 0.62em 0.65em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    vertical-align: middle;
+}
+
+.jellyspot-track-table tr {
+    transition: background 140ms ease;
+}
+
+.jellyspot-track-table tbody tr:hover,
+.jellyspot-track-table tr.is-selected {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.jellyspot-track-table tr.is-hidden {
+    display: none;
+}
+
+.jellyspot-track-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75em;
+    min-width: 0;
+}
+
+.jellyspot-track-main img,
+.jellyspot-track-fallback {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex: 0 0 auto;
+}
+
+.jellyspot-track-fallback {
     background: rgba(255, 255, 255, 0.08);
+}
+
+.jellyspot-track-title {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.jellyspot-muted {
+    color: var(--secondaryTextColor);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.jellyspot-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12em 0.5em;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.jellyspot-pill.is-owned {
+    background: color-mix(in srgb, var(--theme-primary-color, #00a4dc) 22%, transparent);
+}
+
+.jellyspot-empty {
+    padding: 2.4em 1em;
+    text-align: center;
+    color: var(--secondaryTextColor);
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
 }
 
 .jellyspot-queue-table {
@@ -60,4 +339,20 @@
 .jellyspot-missing {
     padding: 1.5em;
     color: var(--secondaryTextColor);
+}
+
+@media (max-width: 720px) {
+    .jellyspot-detail-head {
+        grid-template-columns: 1fr;
+    }
+
+    .jellyspot-col-album,
+    .jellyspot-col-duration {
+        display: none;
+    }
+
+    .jellyspot-actionbar .jellyspot-count {
+        margin-left: 0;
+        width: 100%;
+    }
 }

@@ -574,18 +574,21 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             if (!root.dataset.jellyspotMounted) {
                 root.dataset.jellyspotMounted = 'true';
                 root.innerHTML =
-                    '<h2 class="sectionTitle">JellySpot Browse</h2>' +
-                    '<p class="jellyspot-status">Search Spotify or open your playlists, then queue downloads.</p>' +
-                    '<div class="jellyspot-toolbar">' +
-                    '<div class="inputContainer" style="flex:1;min-width:220px;margin:0;">' +
-                    '<input is="emby-input" type="text" class="jellyspot-search-input" label="Search Spotify" />' +
-                    '</div>' +
+                    '<div class="jellyspot-app">' +
+                    '<div class="jellyspot-hero"><div>' +
+                    '<div class="jellyspot-kicker">Spotify library</div>' +
+                    '<h2 class="sectionTitle jellyspot-title">Browse</h2>' +
+                    '<p class="jellyspot-lede">Open a playlist, pick the tracks you want, and queue only those. Existing files are skipped automatically.</p>' +
+                    '</div></div>' +
+                    '<div class="jellyspot-toolbar jellyspot-toolbar-primary">' +
+                    '<div class="jellyspot-search"><input type="search" class="jellyspot-search-input" placeholder="Search tracks, albums, and playlists" /></div>' +
                     '<button is="emby-button" type="button" class="raised button-submit jellyspot-search-btn"><span>Search</span></button>' +
-                    '<button is="emby-button" type="button" class="raised jellyspot-playlists-btn"><span>My Playlists</span></button>' +
-                    '<button is="emby-button" type="button" class="raised jellyspot-liked-btn"><span>Liked Songs</span></button>' +
+                    '<button is="emby-button" type="button" class="raised jellyspot-playlists-btn"><span>Playlists</span></button>' +
+                    '<button is="emby-button" type="button" class="raised jellyspot-liked-btn"><span>Liked songs</span></button>' +
                     '</div>' +
-                    '<div class="jellyspot-status jellyspot-browse-status"></div>' +
-                    '<div class="jellyspot-grid jellyspot-browse-results"></div>';
+                    '<div class="jellyspot-status jellyspot-browse-status">Choose Playlists or search to get started.</div>' +
+                    '<div class="jellyspot-stage jellyspot-browse-results"></div>' +
+                    '</div>';
 
                 root.querySelector('.jellyspot-search-btn').addEventListener('click', function () {
                     self.searchBrowse(root);
@@ -600,8 +603,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     self.loadPlaylists(root);
                 });
                 root.querySelector('.jellyspot-liked-btn').addEventListener('click', function () {
-                    self.loadLiked(root);
+                    self.openLikedCollection(root);
                 });
+                this.loadPlaylists(root);
             }
         },
 
@@ -619,22 +623,68 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 || '';
         },
 
-        addCard: function (grid, title, meta, img, onClick) {
-            const card = document.createElement('div');
-            card.className = 'jellyspot-card';
+        formatQueueMessage: function (res, fallback) {
+            const queued = this.pick(res, 'Queued', 'queued');
+            const skipped = this.pick(res, 'Skipped', 'skipped');
+            if (queued == null && skipped == null) {
+                return fallback;
+            }
+            let message = 'Queued ' + (queued || 0);
+            if (skipped) {
+                message += ', skipped ' + skipped + ' already in the library';
+            }
+            return message;
+        },
+
+        formatDuration: function (ms) {
+            const total = Math.max(0, Math.round(Number(ms || 0) / 1000));
+            const minutes = Math.floor(total / 60);
+            return minutes + ':' + String(total % 60).padStart(2, '0');
+        },
+
+        addCatalogCard: function (grid, spec) {
+            const self = this;
+            const card = document.createElement('article');
+            card.className = 'jellyspot-card' + (spec.open ? ' is-openable' : '');
             card.innerHTML =
-                (img
-                    ? '<img src="' + this.escapeHtml(img) + '" alt="" />'
+                '<span class="jellyspot-card-kind">' + this.escapeHtml(spec.kindLabel) + '</span>' +
+                (spec.image
+                    ? '<img src="' + this.escapeHtml(spec.image) + '" alt="" />'
                     : '<div class="jellyspot-card-fallback"></div>') +
-                '<strong>' + this.escapeHtml(title) + '</strong>' +
-                '<div class="fieldDescription">' + this.escapeHtml(meta) + '</div>';
-            const btn = document.createElement('button');
-            btn.setAttribute('is', 'emby-button');
-            btn.type = 'button';
-            btn.className = 'raised button-submit';
-            btn.innerHTML = '<span>Download / Monitor</span>';
-            btn.addEventListener('click', onClick);
-            card.appendChild(btn);
+                '<strong>' + this.escapeHtml(spec.title) + '</strong>' +
+                '<div class="fieldDescription">' + this.escapeHtml(spec.meta || '') + '</div>' +
+                '<div class="jellyspot-card-actions"></div>';
+            const actions = card.querySelector('.jellyspot-card-actions');
+            if (spec.open) {
+                const open = document.createElement('button');
+                open.setAttribute('is', 'emby-button');
+                open.type = 'button';
+                open.className = 'raised button-submit';
+                open.innerHTML = '<span>Open</span>';
+                open.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    spec.open();
+                });
+                actions.appendChild(open);
+                card.addEventListener('click', function (e) {
+                    if (e.target.closest('button')) {
+                        return;
+                    }
+                    spec.open();
+                });
+            }
+            if (spec.queue) {
+                const queue = document.createElement('button');
+                queue.setAttribute('is', 'emby-button');
+                queue.type = 'button';
+                queue.className = 'raised';
+                queue.innerHTML = '<span>' + (spec.open ? 'Queue all' : 'Queue') + '</span>';
+                queue.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    spec.queue();
+                });
+                actions.appendChild(queue);
+            }
             grid.appendChild(card);
         },
 
@@ -669,17 +719,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
 
             req.then(function (res) {
-                const queued = self.pick(res, 'Queued', 'queued');
-                const skipped = self.pick(res, 'Skipped', 'skipped');
-                if (queued == null && skipped == null) {
-                    self.setBrowseStatus(root, 'Queued ' + name);
-                    return;
-                }
-                let message = 'Queued ' + (queued || 0);
-                if (skipped) {
-                    message += ', skipped ' + skipped + ' already present';
-                }
-                self.setBrowseStatus(root, message);
+                self.setBrowseStatus(root, self.formatQueueMessage(res, 'Queued ' + name));
             }).catch(function () {
                 self.setBrowseStatus(root, 'Queue failed — link Spotify under Sync first.');
             });
@@ -691,26 +731,52 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             if (!q) {
                 return;
             }
+            this.setBrowseStatus(root, 'Searching…');
             ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('JellySpot/Search?q=' + encodeURIComponent(q) + '&type=track,album,playlist&limit=10'),
                 dataType: 'json'
             }).then(function (data) {
-                const grid = root.querySelector('.jellyspot-browse-results');
-                grid.innerHTML = '';
+                const stage = root.querySelector('.jellyspot-browse-results');
+                stage.innerHTML = '';
                 let count = 0;
-                function addItems(arr, kind) {
-                    (arr || []).forEach(function (item) {
+                function addGroup(title, items, kind) {
+                    const list = items || [];
+                    if (!list.length) {
+                        return;
+                    }
+                    const head = document.createElement('div');
+                    head.className = 'jellyspot-section-head';
+                    head.innerHTML = '<h3>' + self.escapeHtml(title) + '</h3><span class="jellyspot-muted">' + list.length + '</span>';
+                    stage.appendChild(head);
+                    const grid = document.createElement('div');
+                    grid.className = 'jellyspot-grid';
+                    list.forEach(function (item) {
                         count += 1;
-                        self.addCard(grid, item.name || 'Untitled', kind, self.coverOf(item), function () {
-                            self.queueItem(kind, item.id, item.name, root);
+                        const id = item.id || self.pick(item, 'Id');
+                        const name = item.name || self.pick(item, 'Name') || 'Untitled';
+                        self.addCatalogCard(grid, {
+                            kindLabel: kind,
+                            title: name,
+                            meta: kind === 'track' ? self.artistsOf(item) : (kind === 'album' ? self.artistsOf(item) : 'Playlist'),
+                            image: self.coverOf(item),
+                            open: kind === 'playlist'
+                                ? function () { self.openPlaylist(root, id, name); }
+                                : kind === 'album'
+                                    ? function () { self.openAlbum(root, id, name); }
+                                    : null,
+                            queue: function () { self.queueItem(kind, id, name, root); }
                         });
                     });
+                    stage.appendChild(grid);
                 }
-                addItems(data.tracks && data.tracks.items, 'track');
-                addItems(data.albums && data.albums.items, 'album');
-                addItems(data.playlists && data.playlists.items, 'playlist');
-                self.setBrowseStatus(root, count + ' results');
+                addGroup('Playlists', data.playlists && data.playlists.items, 'playlist');
+                addGroup('Albums', data.albums && data.albums.items, 'album');
+                addGroup('Tracks', data.tracks && data.tracks.items, 'track');
+                self.setBrowseStatus(root, count ? count + ' results — open a playlist to choose tracks' : 'No results');
+                if (!count) {
+                    stage.innerHTML = '<div class="jellyspot-empty">No matches. Try a different title, artist, or playlist name.</div>';
+                }
             }).catch(function () {
                 self.setBrowseStatus(root, 'Search failed. Link Spotify under Sync.');
             });
@@ -719,52 +785,314 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         artistsOf: function (item) {
             const artists = this.pick(item, 'Artists', 'artists') || [];
             if (Array.isArray(artists)) {
-                return artists.join(', ');
+                return artists.map(function (artist) {
+                    return typeof artist === 'string' ? artist : (artist && (artist.name || artist.Name)) || '';
+                }).filter(Boolean).join(', ');
             }
             return String(artists);
         },
 
         loadLiked: function (root) {
+            this.openLikedCollection(root);
+        },
+
+        renderLiked: function (root) {
             const self = this;
-            const grid = root.querySelector('.jellyspot-browse-results') || root.querySelector('.jellyspot-liked-results');
-            if (!grid) {
-                return;
+            if (!root.dataset.jellyspotMounted) {
+                root.dataset.jellyspotMounted = 'true';
+                root.innerHTML =
+                    '<div class="jellyspot-app">' +
+                    '<div class="jellyspot-hero"><div>' +
+                    '<div class="jellyspot-kicker">Library</div>' +
+                    '<h2 class="sectionTitle jellyspot-title">Liked songs</h2>' +
+                    '<p class="jellyspot-lede">Select the liked tracks you want. Anything already on disk is skipped.</p>' +
+                    '</div></div>' +
+                    '<div class="jellyspot-status jellyspot-browse-status">Loading liked songs…</div>' +
+                    '<div class="jellyspot-stage jellyspot-browse-results jellyspot-liked-results"></div>' +
+                    '</div>';
             }
+            this.openLikedCollection(root);
+        },
+
+        openLikedCollection: function (root) {
+            const self = this;
+            this.setBrowseStatus(root, 'Loading liked songs…');
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/LikedSongs'), dataType: 'json' })
                 .then(function (tracks) {
-                    grid.innerHTML = '';
-                    (tracks || []).forEach(function (t) {
-                        const id = self.pick(t, 'Id', 'id');
-                        const name = self.pick(t, 'Name', 'name') || 'Untitled';
-                        const meta = self.artistsOf(t) || self.pick(t, 'Album', 'album') || 'Liked';
-                        self.addCard(grid, name, meta, self.coverOf(t), function () {
-                            self.queueItem('track', id, name, root);
-                        });
+                    self.renderTrackPicker(root, {
+                        kind: 'liked',
+                        title: 'Liked songs',
+                        subtitle: 'Saved in your Spotify library',
+                        image: tracks && tracks[0] ? self.coverOf(tracks[0]) : '',
+                        tracks: tracks || [],
+                        queueAll: function () { self.queueItem('liked', 'liked', 'Liked Songs', root); },
+                        playlistName: 'Liked Songs'
                     });
-                    self.setBrowseStatus(root, (tracks || []).length + ' liked songs');
                 })
                 .catch(function () {
                     self.setBrowseStatus(root, 'Could not load liked songs.');
                 });
         },
 
-        renderLiked: function (root) {
-            if (!root.dataset.jellyspotMounted) {
-                root.dataset.jellyspotMounted = 'true';
-                root.innerHTML =
-                    '<h2 class="sectionTitle">Liked Songs</h2>' +
-                    '<p class="jellyspot-status">Your Spotify liked tracks. Queue one or sync the whole list from Sync.</p>' +
-                    '<div class="jellyspot-toolbar">' +
-                    '<button is="emby-button" type="button" class="raised button-submit jellyspot-queue-all-liked"><span>Queue all</span></button>' +
-                    '</div>' +
-                    '<div class="jellyspot-status jellyspot-browse-status"></div>' +
-                    '<div class="jellyspot-grid jellyspot-liked-results"></div>';
-                const self = this;
-                root.querySelector('.jellyspot-queue-all-liked').addEventListener('click', function () {
-                    self.queueItem('liked', 'liked', 'Liked Songs', root);
+        openPlaylist: function (root, id, fallbackName) {
+            const self = this;
+            this.setBrowseStatus(root, 'Opening playlist…');
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists/' + encodeURIComponent(id)), dataType: 'json' })
+                .then(function (data) {
+                    const playlist = self.pick(data, 'Playlist', 'playlist') || {};
+                    const tracks = self.pick(data, 'Tracks', 'tracks') || [];
+                    const name = self.pick(playlist, 'Name', 'name') || fallbackName || 'Playlist';
+                    self.renderTrackPicker(root, {
+                        kind: 'playlist',
+                        id: id,
+                        title: name,
+                        subtitle: (self.pick(playlist, 'TrackCount', 'trackCount') || tracks.length) + ' tracks',
+                        image: self.coverOf(playlist),
+                        tracks: tracks,
+                        queueAll: function () { self.queueItem('playlist', id, name, root); },
+                        monitor: function () {
+                            ApiClient.ajax({
+                                type: 'POST',
+                                url: ApiClient.getUrl('JellySpot/Playlists/' + encodeURIComponent(id) + '/Monitor')
+                            }).then(function () {
+                                self.setBrowseStatus(root, 'Monitoring ' + name + ' on sync');
+                            });
+                        },
+                        playlistId: id,
+                        playlistName: name
+                    });
+                })
+                .catch(function () {
+                    self.setBrowseStatus(root, 'Could not open that playlist.');
+                });
+        },
+
+        openAlbum: function (root, id, fallbackName) {
+            const self = this;
+            this.setBrowseStatus(root, 'Opening album…');
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Albums/' + encodeURIComponent(id)), dataType: 'json' })
+                .then(function (data) {
+                    const album = self.pick(data, 'Album', 'album') || {};
+                    const tracks = self.pick(data, 'Tracks', 'tracks') || [];
+                    const name = self.pick(album, 'Name', 'name') || fallbackName || 'Album';
+                    self.renderTrackPicker(root, {
+                        kind: 'album',
+                        id: id,
+                        title: name,
+                        subtitle: self.pick(album, 'Artists', 'artists') || '',
+                        image: self.coverOf(album) || (tracks[0] && self.coverOf(tracks[0])),
+                        tracks: tracks,
+                        queueAll: function () { self.queueItem('album', id, name, root); },
+                        playlistId: id,
+                        playlistName: name
+                    });
+                })
+                .catch(function () {
+                    self.setBrowseStatus(root, 'Could not open that album.');
+                });
+        },
+
+        renderTrackPicker: function (root, spec) {
+            const self = this;
+            const stage = root.querySelector('.jellyspot-browse-results') || root.querySelector('.jellyspot-liked-results');
+            if (!stage) {
+                return;
+            }
+
+            const tracks = spec.tracks || [];
+            stage.innerHTML =
+                '<div class="jellyspot-detail">' +
+                '<div class="jellyspot-detail-head">' +
+                (spec.image
+                    ? '<img class="jellyspot-detail-cover" src="' + this.escapeHtml(spec.image) + '" alt="" />'
+                    : '<div class="jellyspot-detail-fallback"></div>') +
+                '<div class="jellyspot-detail-meta">' +
+                '<div class="jellyspot-kicker">' + this.escapeHtml(spec.kind) + '</div>' +
+                '<h3>' + this.escapeHtml(spec.title) + '</h3>' +
+                '<p class="jellyspot-lede">' + this.escapeHtml(spec.subtitle || '') + '</p>' +
+                '</div></div>' +
+                '<div class="jellyspot-actionbar">' +
+                (spec.kind !== 'liked' ? '<button is="emby-button" type="button" class="raised jellyspot-back-btn"><span>Back</span></button>' : '') +
+                '<button is="emby-button" type="button" class="raised jellyspot-select-all"><span>Select all</span></button>' +
+                '<button is="emby-button" type="button" class="raised jellyspot-select-none"><span>Select none</span></button>' +
+                '<input type="search" class="jellyspot-track-filter" placeholder="Filter tracks" />' +
+                '<button is="emby-button" type="button" class="raised button-submit jellyspot-queue-selected"><span>Queue selected</span></button>' +
+                '<button is="emby-button" type="button" class="raised jellyspot-queue-all"><span>Queue all</span></button>' +
+                (spec.monitor ? '<button is="emby-button" type="button" class="raised jellyspot-monitor-btn"><span>Monitor</span></button>' : '') +
+                '<span class="jellyspot-count"></span>' +
+                '</div>' +
+                '<table class="jellyspot-track-table"><thead><tr>' +
+                '<th></th><th>Title</th><th class="jellyspot-col-album">Album</th><th class="jellyspot-col-duration">Time</th><th>Status</th>' +
+                '</tr></thead><tbody></tbody></table>' +
+                '</div>';
+
+            const tbody = stage.querySelector('tbody');
+            tracks.forEach(function (track, index) {
+                const id = self.pick(track, 'Id', 'id');
+                const title = self.pick(track, 'Name', 'name') || 'Untitled';
+                const artists = self.artistsOf(track);
+                const album = self.pick(track, 'Album', 'album') || '';
+                const duration = self.pick(track, 'DurationMs', 'durationMs', 'duration_ms') || 0;
+                const image = self.coverOf(track);
+                const tr = document.createElement('tr');
+                tr.dataset.trackId = id;
+                tr.dataset.search = (title + ' ' + artists + ' ' + album).toLowerCase();
+                tr.innerHTML =
+                    '<td><input type="checkbox" class="jellyspot-track-check" checked /></td>' +
+                    '<td><div class="jellyspot-track-main">' +
+                    (image ? '<img src="' + self.escapeHtml(image) + '" alt="" />' : '<div class="jellyspot-track-fallback"></div>') +
+                    '<div><div class="jellyspot-track-title">' + self.escapeHtml(title) + '</div>' +
+                    '<div class="jellyspot-muted">' + self.escapeHtml(artists) + '</div></div></div></td>' +
+                    '<td class="jellyspot-col-album jellyspot-muted">' + self.escapeHtml(album) + '</td>' +
+                    '<td class="jellyspot-col-duration jellyspot-muted">' + self.escapeHtml(self.formatDuration(duration)) + '</td>' +
+                    '<td><span class="jellyspot-pill">Ready</span></td>';
+                tr.addEventListener('click', function (e) {
+                    if (e.target.closest('input, button')) {
+                        return;
+                    }
+                    const box = tr.querySelector('.jellyspot-track-check');
+                    box.checked = !box.checked;
+                    self.syncTrackSelection(stage);
+                });
+                tr.querySelector('.jellyspot-track-check').addEventListener('change', function () {
+                    self.syncTrackSelection(stage);
+                });
+                tbody.appendChild(tr);
+            });
+
+            const back = stage.querySelector('.jellyspot-back-btn');
+            if (back) {
+                back.addEventListener('click', function () {
+                    self.loadPlaylists(root);
                 });
             }
-            this.loadLiked(root);
+            stage.querySelector('.jellyspot-select-all').addEventListener('click', function () {
+                self.setVisibleTrackChecks(stage, true);
+            });
+            stage.querySelector('.jellyspot-select-none').addEventListener('click', function () {
+                self.setVisibleTrackChecks(stage, false);
+            });
+            stage.querySelector('.jellyspot-track-filter').addEventListener('input', function (e) {
+                self.filterTrackRows(stage, e.target.value);
+            });
+            stage.querySelector('.jellyspot-queue-selected').addEventListener('click', function () {
+                const ids = self.selectedTrackIds(stage);
+                if (!ids.length) {
+                    self.setBrowseStatus(root, 'Select at least one track.');
+                    return;
+                }
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('JellySpot/Queue/Tracks'),
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        TrackIds: ids,
+                        PlaylistId: spec.playlistId || spec.kind,
+                        PlaylistName: spec.playlistName || spec.title
+                    })
+                }).then(function (res) {
+                    self.setBrowseStatus(root, self.formatQueueMessage(res, 'Queued selected tracks'));
+                }).catch(function () {
+                    self.setBrowseStatus(root, 'Queue failed — link Spotify under Sync first.');
+                });
+            });
+            stage.querySelector('.jellyspot-queue-all').addEventListener('click', function () {
+                spec.queueAll();
+            });
+            const monitor = stage.querySelector('.jellyspot-monitor-btn');
+            if (monitor && spec.monitor) {
+                monitor.addEventListener('click', spec.monitor);
+            }
+
+            this.syncTrackSelection(stage);
+            this.setBrowseStatus(root, tracks.length + ' tracks — deselect anything you do not want');
+            this.markOwnedTracks(stage);
+        },
+
+        selectedTrackIds: function (stage) {
+            return Array.prototype.map.call(stage.querySelectorAll('tr[data-track-id]'), function (row) {
+                const box = row.querySelector('.jellyspot-track-check');
+                return box && box.checked && !row.classList.contains('is-hidden') ? row.dataset.trackId : null;
+            }).filter(Boolean);
+        },
+
+        setVisibleTrackChecks: function (stage, checked) {
+            stage.querySelectorAll('tr[data-track-id]').forEach(function (row) {
+                if (row.classList.contains('is-hidden')) {
+                    return;
+                }
+                row.querySelector('.jellyspot-track-check').checked = checked;
+            });
+            this.syncTrackSelection(stage);
+        },
+
+        filterTrackRows: function (stage, query) {
+            const needle = String(query || '').trim().toLowerCase();
+            stage.querySelectorAll('tr[data-track-id]').forEach(function (row) {
+                row.classList.toggle('is-hidden', !!(needle && row.dataset.search.indexOf(needle) < 0));
+            });
+            this.syncTrackSelection(stage);
+        },
+
+        syncTrackSelection: function (stage) {
+            const rows = stage.querySelectorAll('tr[data-track-id]');
+            let selected = 0;
+            let visible = 0;
+            rows.forEach(function (row) {
+                if (row.classList.contains('is-hidden')) {
+                    return;
+                }
+                visible += 1;
+                const box = row.querySelector('.jellyspot-track-check');
+                row.classList.toggle('is-selected', !!(box && box.checked));
+                if (box && box.checked) {
+                    selected += 1;
+                }
+            });
+            const count = stage.querySelector('.jellyspot-count');
+            if (count) {
+                count.textContent = selected + ' of ' + visible + ' selected';
+            }
+        },
+
+        markOwnedTracks: function (stage) {
+            const ids = Array.prototype.map.call(stage.querySelectorAll('tr[data-track-id]'), function (row) {
+                return row.dataset.trackId;
+            }).filter(Boolean);
+            if (!ids.length) {
+                return;
+            }
+
+            const chunks = [];
+            for (let i = 0; i < ids.length; i += 80) {
+                chunks.push(ids.slice(i, i + 80));
+            }
+
+            Promise.all(chunks.map(function (chunk) {
+                return ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('JellySpot/Library/Exists') + '?ids=' + encodeURIComponent(chunk.join(',')),
+                    dataType: 'json'
+                });
+            })).then(function (maps) {
+                const owned = {};
+                maps.forEach(function (map) {
+                    Object.keys(map || {}).forEach(function (key) {
+                        owned[key] = map[key];
+                    });
+                });
+                stage.querySelectorAll('tr[data-track-id]').forEach(function (row) {
+                    const pill = row.querySelector('.jellyspot-pill');
+                    if (!pill) {
+                        return;
+                    }
+                    const isOwned = !!owned[row.dataset.trackId];
+                    pill.textContent = isOwned ? 'In library' : 'Ready';
+                    pill.classList.toggle('is-owned', isOwned);
+                });
+            }).catch(function () {
+                // ownership badges are optional
+            });
         },
 
         ensureDrawerLinks: function () {
@@ -797,19 +1125,34 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         loadPlaylists: function (root) {
             const self = this;
+            this.setBrowseStatus(root, 'Loading playlists…');
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists'), dataType: 'json' })
                 .then(function (playlists) {
-                    const grid = root.querySelector('.jellyspot-browse-results');
-                    grid.innerHTML = '';
-                    (playlists || []).forEach(function (p) {
+                    const stage = root.querySelector('.jellyspot-browse-results');
+                    stage.innerHTML = '';
+                    const list = playlists || [];
+                    if (!list.length) {
+                        stage.innerHTML = '<div class="jellyspot-empty">No playlists found. Link Spotify under Sync if this looks wrong.</div>';
+                        self.setBrowseStatus(root, 'No playlists');
+                        return;
+                    }
+                    const grid = document.createElement('div');
+                    grid.className = 'jellyspot-grid';
+                    list.forEach(function (p) {
                         const id = self.pick(p, 'Id', 'id');
                         const name = self.pick(p, 'Name', 'name') || id;
                         const meta = (self.pick(p, 'TrackCount', 'trackCount') || 0) + ' tracks';
-                        self.addCard(grid, name, meta, self.coverOf(p), function () {
-                            self.queueItem('playlist', id, name, root);
+                        self.addCatalogCard(grid, {
+                            kindLabel: 'playlist',
+                            title: name,
+                            meta: meta,
+                            image: self.coverOf(p),
+                            open: function () { self.openPlaylist(root, id, name); },
+                            queue: function () { self.queueItem('playlist', id, name, root); }
                         });
                     });
-                    self.setBrowseStatus(root, (playlists || []).length + ' playlists');
+                    stage.appendChild(grid);
+                    self.setBrowseStatus(root, list.length + ' playlists — open one to choose tracks');
                 })
                 .catch(function () {
                     self.setBrowseStatus(root, 'Could not load playlists.');
@@ -821,7 +1164,11 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             if (!root.dataset.jellyspotMounted) {
                 root.dataset.jellyspotMounted = 'true';
                 root.innerHTML =
-                    '<h2 class="sectionTitle">JellySpot Sync</h2>' +
+                    '<div class="jellyspot-hero"><div>' +
+                    '<div class="jellyspot-kicker">Account</div>' +
+                    '<h2 class="sectionTitle jellyspot-title">Sync</h2>' +
+                    '<p class="jellyspot-lede">Link Spotify and choose what JellySpot should keep mirrored automatically.</p>' +
+                    '</div></div>' +
                     '<p class="jellyspot-status">Link your Spotify account and choose what to keep mirrored.</p>' +
                     '<div class="jellyspot-status jellyspot-link-status">Checking link status…</div>' +
                     '<div class="jellyspot-toolbar">' +
@@ -939,8 +1286,11 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             if (!root.dataset.jellyspotMounted) {
                 root.dataset.jellyspotMounted = 'true';
                 root.innerHTML =
-                    '<h2 class="sectionTitle">JellySpot Queue</h2>' +
-                    '<p class="jellyspot-status">Download progress, match scores, and rematch actions.</p>' +
+                    '<div class="jellyspot-hero"><div>' +
+                    '<div class="jellyspot-kicker">Downloads</div>' +
+                    '<h2 class="sectionTitle jellyspot-title">Queue</h2>' +
+                    '<p class="jellyspot-lede">Track match scores, retry failures, and rematch anything that landed on the wrong video.</p>' +
+                    '</div></div>' +
                     '<div class="jellyspot-toolbar">' +
                     '<div class="selectContainer" style="margin:0;"><label class="selectLabel" for="jellyspotQueueFilterHome">Status</label>' +
                     '<select is="emby-select" id="jellyspotQueueFilterHome" class="emby-select-withcolor jellyspot-queue-filter">' +

@@ -29,6 +29,7 @@ public class JellySpotController : ControllerBase
     private readonly ILibraryManager _libraryManager;
     private readonly IApplicationPaths _applicationPaths;
     private readonly FfmpegLocator _ffmpeg;
+    private readonly LibraryStorage _storage;
     private readonly ILogger<JellySpotController> _logger;
 
     public JellySpotController(
@@ -41,6 +42,7 @@ public class JellySpotController : ControllerBase
         ILibraryManager libraryManager,
         IApplicationPaths applicationPaths,
         FfmpegLocator ffmpeg,
+        LibraryStorage storage,
         ILogger<JellySpotController> logger)
     {
         _auth = auth;
@@ -52,6 +54,7 @@ public class JellySpotController : ControllerBase
         _libraryManager = libraryManager;
         _applicationPaths = applicationPaths;
         _ffmpeg = ffmpeg;
+        _storage = storage;
         _logger = logger;
     }
 
@@ -230,6 +233,64 @@ public class JellySpotController : ControllerBase
         }
 
         return Ok(new { Playlist = result.Value.Playlist, Tracks = result.Value.Tracks });
+    }
+
+    [HttpGet("Albums/{id}")]
+    [Authorize]
+    public async Task<ActionResult> Album(string id, CancellationToken ct)
+    {
+        var tracks = await _spotify.GetAlbumTracksAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), id, ct).ConfigureAwait(false);
+        if (tracks.Count == 0)
+        {
+            return NotFound();
+        }
+
+        var first = tracks[0];
+        return Ok(new
+        {
+            Album = new
+            {
+                Id = id,
+                Name = first.Album,
+                ImageUrl = first.CoverUrl,
+                Artists = first.AlbumArtist
+            },
+            Tracks = tracks
+        });
+    }
+
+    [HttpGet("Library/Exists")]
+    [Authorize]
+    public async Task<ActionResult> LibraryExists([FromQuery] string? ids, CancellationToken ct)
+    {
+        var map = new Dictionary<string, bool>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(ids))
+        {
+            return Ok(map);
+        }
+
+        foreach (var id in ids.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct())
+        {
+            map[id] = await _storage.TrackFileExistsAsync(id, ct).ConfigureAwait(false);
+        }
+
+        return Ok(map);
+    }
+
+    [HttpPost("Playlists/{id}/Monitor")]
+    [Authorize]
+    public async Task<ActionResult> MonitorPlaylist(string id, CancellationToken ct)
+    {
+        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
+        var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
+        if (!settings.MonitoredPlaylistIds.Contains(id))
+        {
+            settings.MonitoredPlaylistIds.Add(id);
+        }
+
+        settings.Enabled = true;
+        await _store.SaveUserSettingsAsync(settings, ct).ConfigureAwait(false);
+        return Ok(new { Monitored = true, PlaylistId = id });
     }
 
     [HttpGet("LikedSongs")]

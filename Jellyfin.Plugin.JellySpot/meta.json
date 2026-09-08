@@ -7,8 +7,8 @@
   "overview": "Spotify browse + sync for Jellyfin",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-08T00:00:00.0000000Z",
-  "version": "1.0.11.0",
-  "changelog": "Skip existing files, unique queue items, and selectable YouTube audio quality",
+  "version": "1.0.12.0",
+  "changelog": "Open playlists in Browse, select tracks, and a cleaner library UI",
   "imagePath": "thumb.png",
   "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySpot/main/assets/jellyspot.png"
 }
