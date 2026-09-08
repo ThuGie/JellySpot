@@ -71,6 +71,16 @@ public class TrackDownloader
             return;
         }
 
+        if (_storage.IsInJellyfinLibrary(track))
+        {
+            item.Status = "Completed";
+            item.RelativePath = null;
+            item.Error = null;
+            await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
+            _logger.LogInformation("Skipping {Track}; already in the Jellyfin library", track.Name);
+            return;
+        }
+
         item.Status = "Matching";
         await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
 

@@ -28,7 +28,7 @@ public class DownloadQueueService
 
     public async Task<EnqueueResult> EnqueueTrackAsync(Guid userId, SpotifyTrackInfo track, string? playlistId = null, string? playlistName = null, CancellationToken ct = default)
     {
-        if (await _storage.FindExistingRelativePathAsync(track, ct).ConfigureAwait(false) != null)
+        if (await _storage.IsOwnedAsync(track, ct).ConfigureAwait(false))
         {
             return EnqueueResult.AlreadyDownloaded;
         }

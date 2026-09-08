@@ -418,6 +418,53 @@ public class JellySpotController : ControllerBase
         return Ok(map);
     }
 
+    public class LibraryExistsTrack
+    {
+        public string Id { get; set; } = string.Empty;
+
+        public string? Name { get; set; }
+
+        public List<string>? Artists { get; set; }
+
+        public string? Album { get; set; }
+
+        public string? Isrc { get; set; }
+
+        public int DurationMs { get; set; }
+    }
+
+    public class LibraryExistsRequest
+    {
+        public List<LibraryExistsTrack> Tracks { get; set; } = [];
+    }
+
+    [HttpPost("Library/Exists")]
+    [Authorize]
+    public async Task<ActionResult> LibraryExistsPost([FromBody] LibraryExistsRequest? request, CancellationToken ct)
+    {
+        var map = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (var row in request?.Tracks ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(row.Id))
+            {
+                continue;
+            }
+
+            var track = new SpotifyTrackInfo
+            {
+                Id = row.Id,
+                Name = row.Name ?? string.Empty,
+                Artists = row.Artists ?? [],
+                Album = row.Album ?? string.Empty,
+                Isrc = row.Isrc,
+                DurationMs = row.DurationMs
+            };
+            map[row.Id] = await _storage.IsOwnedAsync(track, ct).ConfigureAwait(false);
+        }
+
+        return Ok(map);
+    }
+
     [HttpPost("Playlists/{id}/Monitor")]
     [Authorize]
     public async Task<ActionResult> MonitorPlaylist(string id, CancellationToken ct)

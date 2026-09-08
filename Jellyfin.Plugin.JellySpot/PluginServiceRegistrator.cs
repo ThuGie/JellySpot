@@ -29,6 +29,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<TrackMatcher>();
         serviceCollection.AddSingleton<FfmpegLocator>();
         serviceCollection.AddSingleton<TrackDownloader>();
+        serviceCollection.AddSingleton<LibraryMatchService>();
         serviceCollection.AddSingleton<LibraryStorage>();
         serviceCollection.AddSingleton<DownloadQueueService>();
         serviceCollection.AddSingleton<SyncEngine>();

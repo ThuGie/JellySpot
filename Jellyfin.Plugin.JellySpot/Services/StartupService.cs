@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.JellySpot.Helpers;
+using Jellyfin.Plugin.JellySpot.Services.Storage;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
@@ -7,10 +8,12 @@ namespace Jellyfin.Plugin.JellySpot.Services;
 public class StartupService : IScheduledTask
 {
     private readonly ILogger<Plugin> _logger;
+    private readonly LibraryMatchService _libraryMatch;
 
-    public StartupService(ILogger<Plugin> logger)
+    public StartupService(ILogger<Plugin> logger, LibraryMatchService libraryMatch)
     {
         _logger = logger;
+        _libraryMatch = libraryMatch;
     }
 
     public string Name => "JellySpot Startup";
@@ -30,6 +33,17 @@ public class StartupService : IScheduledTask
             cancellationToken.ThrowIfCancellationRequested();
             if (FileTransformationHelper.TryRegister(_logger))
             {
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        _libraryMatch.Warmup();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "JellySpot library match warmup failed");
+                    }
+                });
                 return;
             }
 

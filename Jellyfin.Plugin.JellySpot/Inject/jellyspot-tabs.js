@@ -1247,6 +1247,51 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             return typeof album === 'string' ? album : '';
         },
 
+        trackPayload: function (item) {
+            if (!item) {
+                return null;
+            }
+            const id = this.pick(item, 'Id', 'id');
+            if (!id) {
+                return null;
+            }
+            const ext = item.external_ids || item.externalIds || {};
+            return {
+                Id: id,
+                Name: this.pick(item, 'Name', 'name') || '',
+                Artists: this.artistEntriesOf(item).map(function (artist) { return artist.name; }),
+                Album: this.albumNameOf(item) || '',
+                Isrc: this.pick(item, 'Isrc', 'isrc') || ext.isrc || ext.Isrc || '',
+                DurationMs: Number(this.pick(item, 'DurationMs', 'durationMs', 'duration_ms') || 0)
+            };
+        },
+
+        attachTrackMeta: function (el, item) {
+            const payload = this.trackPayload(item);
+            if (!payload) {
+                return;
+            }
+            el.dataset.trackId = payload.Id;
+            el.dataset.title = payload.Name;
+            el.dataset.artists = payload.Artists.join(', ');
+            el.dataset.album = payload.Album || '';
+            if (payload.Isrc) {
+                el.dataset.isrc = payload.Isrc;
+            }
+            el.dataset.duration = String(payload.DurationMs || 0);
+        },
+
+        payloadFromEl: function (el) {
+            return {
+                Id: el.dataset.trackId,
+                Name: el.dataset.title || '',
+                Artists: (el.dataset.artists || '').split(',').map(function (part) { return part.trim(); }).filter(Boolean),
+                Album: el.dataset.album || '',
+                Isrc: el.dataset.isrc || '',
+                DurationMs: Number(el.dataset.duration || 0)
+            };
+        },
+
         openTrackAlbum: function (root, item, fallbackName) {
             const self = this;
             const albumId = this.albumIdOf(item);
@@ -1288,6 +1333,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 title: name,
                 meta: this.artistsOf(item),
                 image: this.coverOf(item),
+                track: item,
                 trackId: id,
                 open: function () { self.openTrackAlbum(root, item, name); },
                 openLabel: 'Album',
@@ -1334,7 +1380,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             const card = document.createElement('article');
             card.className = 'jellyspot-card' + (spec.open ? ' is-openable' : '') + (spec.avatar ? ' is-artist' : '');
-            if (spec.trackId) {
+            if (spec.track) {
+                this.attachTrackMeta(card, spec.track);
+            } else if (spec.trackId) {
                 card.dataset.trackId = spec.trackId;
             }
             card.innerHTML =
@@ -1527,6 +1575,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     stage.appendChild(moreBtn);
                 }
                 self.setBrowseStatus(root, total + ' results — open a song to see its album');
+                self.markOwnedCards(stage);
             }).catch(function () {
                 self.setBrowseStatus(root, 'Search failed. Link your Spotify first.');
             });
@@ -1853,6 +1902,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 const viewingThisAlbum = spec.kind === 'album' && spec.id && albumId && spec.id === albumId;
                 const canOpenAlbum = !!albumId && !viewingThisAlbum;
                 const tr = document.createElement('tr');
+                self.attachTrackMeta(tr, track);
                 tr.dataset.trackId = id;
                 tr.dataset.search = (title + ' ' + artists + ' ' + album).toLowerCase();
                 tr.innerHTML =
@@ -1981,20 +2031,22 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
         },
 
-        lookupOwnedIds: function (ids, onDone) {
-            const list = (ids || []).filter(Boolean);
+        lookupOwned: function (payloads, onDone) {
+            const list = (payloads || []).filter(function (row) { return row && row.Id; });
             if (!list.length) {
                 onDone({});
                 return;
             }
             const chunks = [];
-            for (let i = 0; i < list.length; i += 80) {
-                chunks.push(list.slice(i, i + 80));
+            for (let i = 0; i < list.length; i += 40) {
+                chunks.push(list.slice(i, i + 40));
             }
             Promise.all(chunks.map(function (chunk) {
                 return ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl('JellySpot/Library/Exists') + '?ids=' + encodeURIComponent(chunk.join(',')),
+                    type: 'POST',
+                    url: ApiClient.getUrl('JellySpot/Library/Exists'),
+                    data: JSON.stringify({ Tracks: chunk }),
+                    contentType: 'application/json',
                     dataType: 'json'
                 });
             })).then(function (maps) {
@@ -2011,11 +2063,12 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         },
 
         markOwnedCards: function (root) {
+            const self = this;
             const cards = root.querySelectorAll('.jellyspot-card[data-track-id]');
-            const ids = Array.prototype.map.call(cards, function (card) {
-                return card.dataset.trackId;
+            const payloads = Array.prototype.map.call(cards, function (card) {
+                return self.payloadFromEl(card);
             });
-            this.lookupOwnedIds(ids, function (owned) {
+            this.lookupOwned(payloads, function (owned) {
                 cards.forEach(function (card) {
                     if (!owned[card.dataset.trackId]) {
                         return;
@@ -2037,11 +2090,12 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         },
 
         markOwnedTracks: function (stage) {
+            const self = this;
             const rows = stage.querySelectorAll('tr[data-track-id]');
-            const ids = Array.prototype.map.call(rows, function (row) {
-                return row.dataset.trackId;
+            const payloads = Array.prototype.map.call(rows, function (row) {
+                return self.payloadFromEl(row);
             });
-            this.lookupOwnedIds(ids, function (owned) {
+            this.lookupOwned(payloads, function (owned) {
                 rows.forEach(function (row) {
                     const pill = row.querySelector('.jellyspot-pill');
                     if (!pill) {
@@ -2056,7 +2110,14 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         rowQueue.textContent = isOwned ? 'Saved' : 'Queue';
                         rowQueue.disabled = isOwned;
                     }
+                    if (isOwned) {
+                        const box = row.querySelector('.jellyspot-track-check');
+                        if (box) {
+                            box.checked = false;
+                        }
+                    }
                 });
+                self.syncTrackSelection(stage);
             });
         },
 

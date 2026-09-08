@@ -42,7 +42,7 @@
                     <div class="jsp-grid">
                         <article class="jsp-card">
                             <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">folder</span>Storage</h3>
-                            <p class="jsp-card-copy">Pick a music library or set a folder. Downloads land here and Jellyfin can scan them after sync.</p>
+                            <p class="jsp-card-copy">Pick a music library or set a folder. Downloads land here. Tracks you already have in any music library are skipped.</p>
                             <div class="selectContainer">
                                 <label class="selectLabel" for="selectedLibraryId">Music library</label>
                                 <select is="emby-select" id="selectedLibraryId" class="emby-select-withcolor">
@@ -80,7 +80,7 @@
                     </div>
                     <article class="jsp-card">
                         <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">high_quality</span>Download quality</h3>
-                        <p class="jsp-card-copy">Existing files are never downloaded again. Quality picks the YouTube audio stream before conversion.</p>
+                        <p class="jsp-card-copy">Songs already in a Jellyfin music library, or previously downloaded by JellySpot, are skipped. Quality picks the YouTube audio stream before conversion.</p>
                         <div class="jsp-grid">
                             <div class="selectContainer">
                                 <label class="selectLabel" for="preferredFormat">Preferred format</label>

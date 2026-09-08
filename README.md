@@ -18,7 +18,7 @@ After install + **restart Jellyfin**, open the **Home** screen. Next to Home / F
 |---|---|
 | **Spotify Browse** | Music only: library, liked songs, sync, and the download queue |
 
-Inside that tab, use the row of buttons for **Overview / Playlists / Albums / Artists / Liked / Sync / Queue**.
+Inside that tab, use **Library · Liked · Sync · Queue**. Playlists, albums, and artists live under Library.
 
 **Admin:** left Dashboard menu → **JellySpot** (settings), same pattern as JellySeerr / StreamReady.
 
@@ -86,7 +86,8 @@ Use your real Jellyfin base URL/port if different.
 | Area | What you get |
 |---|---|
 | Admin | Storage path, Spotify credentials, rate limits, format, match threshold |
-| Spotify Browse | One Home tab: search, playlists, albums, artists, liked, sync, queue |
+| Spotify Browse | One Home tab: Library, liked songs, sync, and the download queue |
+| Library skip | Songs already in a Jellyfin music library (ISRC or title/artist/duration) show as In library and are not downloaded again |
 | My Sync | Per-user OAuth, monitored playlists, artist include/exclude filters, Sync now |
 | Queue | Status, match scores, rematch failed/completed items |
 | Sync task | Scheduled `JellySpot Sync` task; uses playlist `snapshot_id` to skip unchanged lists |
@@ -118,6 +119,13 @@ Use your real Jellyfin base URL/port if different.
 ```
 
 ## How matching works
+
+Before YouTube Music is searched, JellySpot checks whether you already have the song:
+
+1. A previous JellySpot download for that Spotify track, or
+2. An audio file already in a Jellyfin **music** library (ISRC, or a tight title + artist + duration match). Edition tags like `(Explicit Version)` and a leading artist name on the album folder are ignored, so `Greatest Hits (1998)` and `2Pac Greatest Hits (Explicit Version) (1998)` count as the same release. Existing album folders with more tracks are reused for any truly missing files.
+
+If it is not already owned:
 
 1. Prefer cached `spotifyTrackId → youtubeVideoId`
 2. Search YouTube Music by **ISRC** when available
