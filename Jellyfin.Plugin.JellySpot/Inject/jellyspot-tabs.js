@@ -457,13 +457,41 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         isJellySpotMenuHref: function (href) {
             const value = String(href || '').toLowerCase();
             return value.indexOf('name=jellyspot') >= 0 ||
-                (value.indexOf('configurationpage') >= 0 && value.indexOf('jellyspot') >= 0);
+                (value.indexOf('configurationpage') >= 0 && value.indexOf('jellyspot') >= 0) ||
+                value.indexOf('pluginurl') >= 0 && value.indexOf('jellyspot') >= 0;
+        },
+
+        isDrawerElement: function (el) {
+            return !!(el && el.closest && el.closest(
+                '.MuiDrawer-root, .mainDrawer, .navDrawer, .mainDrawer-scrollContainer, aside'
+            ));
+        },
+
+        isJellySpotDrawerItem: function (el) {
+            if (!el || (el.getAttribute && el.getAttribute('data-jellyspot-tab'))) {
+                return false;
+            }
+            if (el.id === 'jellyspot-drawer-browse' || el.getAttribute('data-jellyspot-rewritten') === '1') {
+                return true;
+            }
+            const href = el.getAttribute('href') || el.getAttribute('to') || '';
+            if (this.isJellySpotMenuHref(href)) {
+                return this.isDrawerElement(el) || !this.isDashboardContext();
+            }
+            if (!this.isDrawerElement(el)) {
+                return false;
+            }
+            const text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+            return text === 'JellySpot';
         },
 
         rewriteOfficialMenuLinks: function () {
             const self = this;
-            document.querySelectorAll('a[href*="name=JellySpot"], a[href*="name=jellyspot"]').forEach(function (link) {
-                if (self.isDashboardContext() && link.closest('.type-interior, .dashboardDocument, #dashboardPage')) {
+            document.querySelectorAll('a[href*="name=JellySpot"], a[href*="name=jellyspot"], a[href*="JellySpot"]').forEach(function (link) {
+                if (self.isDashboardContext() && !self.isDrawerElement(link)) {
+                    return;
+                }
+                if (!self.isDrawerElement(link) && !self.isJellySpotMenuHref(link.getAttribute('href'))) {
                     return;
                 }
                 link.setAttribute('href', '#/home?tab=browse');
@@ -479,19 +507,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             document.addEventListener('click', function (event) {
                 const link = event.target && event.target.closest
-                    ? event.target.closest('a, button')
+                    ? event.target.closest('a, button, [role="button"], .MuiListItemButton-root')
                     : null;
-                if (!link) {
-                    return;
-                }
-                if (link.getAttribute && link.getAttribute('data-jellyspot-tab')) {
-                    return;
-                }
-                const href = link.getAttribute('href') || link.getAttribute('to') || '';
-                const shouldOpenUserUi = link.id === 'jellyspot-drawer-browse' ||
-                    link.getAttribute('data-jellyspot-rewritten') === '1' ||
-                    (self.isJellySpotMenuHref(href) && !self.isDashboardContext());
-                if (!shouldOpenUserUi) {
+                if (!link || !self.isJellySpotDrawerItem(link)) {
                     return;
                 }
                 event.preventDefault();
@@ -741,7 +759,12 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         ensureDrawerLinks: function () {
             this.rewriteOfficialMenuLinks();
-            const host = document.querySelector('.mainDrawer-scrollContainer') ||
+            if (document.querySelector('a[href*="name=JellySpot"], a[href*="name=jellyspot"], a[data-jellyspot-rewritten], #jellyspot-drawer-browse')) {
+                return;
+            }
+
+            const host = document.querySelector('.MuiDrawer-paper .MuiList-root:last-of-type') ||
+                document.querySelector('.mainDrawer-scrollContainer') ||
                 document.querySelector('.navDrawer') ||
                 document.querySelector('.mainDrawer');
             if (!host || document.getElementById('jellyspot-drawer-browse')) {
@@ -751,7 +774,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             const btn = document.createElement('a');
             btn.id = 'jellyspot-drawer-browse';
-            btn.className = 'navMenuOption emby-button';
+            btn.className = 'navMenuOption emby-button MuiListItemButton-root';
             btn.href = '#/home?tab=browse';
             btn.innerHTML = '<span class="material-icons navMenuOptionIcon music_note" aria-hidden="true"></span><span class="navMenuOptionText">JellySpot</span>';
             btn.addEventListener('click', function (e) {

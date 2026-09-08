@@ -27,14 +27,13 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasPluginConfiguration, 
 
     public IEnumerable<PluginPageInfo> GetPages()
     {
-        // Keep this off the user drawer. EnableInMainMenu points at a Dashboard
-        // configuration page, which redirects non-admins to Home. Users open
-        // Browse from the injected Home tabs / drawer link instead.
+        // Official drawer item. Clicks are intercepted in jellyspot-tabs.js so
+        // they open Home → Browse instead of the Dashboard config page.
         yield return new PluginPageInfo
         {
             Name = Name,
             DisplayName = "JellySpot",
-            EnableInMainMenu = false,
+            EnableInMainMenu = true,
             MenuIcon = "music_note",
             EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.config.html"
         };
