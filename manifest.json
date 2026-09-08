@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySpot/main/assets/jellyspot.png",
     "versions": [
       {
+        "version": "1.0.11.0",
+        "changelog": "Release 1.0.11.0",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySpot/releases/download/v1.0.11.0/JellySpot_1.0.11.0.zip",
+        "checksum": "e9b945d09e424bccb7f42710f893cf64",
+        "timestamp": "2026-09-08T00:04:50Z"
+      },
+      {
         "version": "1.0.10.0",
         "changelog": "Release 1.0.10.0",
         "targetAbi": "10.11.0.0",
