@@ -22,6 +22,8 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public string PreferredFormat { get; set; } = "m4a";
 
+    public string AudioQuality { get; set; } = "highest";
+
     public double MinMatchScore { get; set; } = 80.0;
 
     public int SyncIntervalMinutes { get; set; } = 60;

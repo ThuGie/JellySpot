@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using Jellyfin.Plugin.JellySpot.Models;
@@ -41,15 +42,32 @@ public class TrackDownloader
     {
         var track = ToTrackInfo(item);
 
-        if (!forceRematch && await _storage.TrackFileExistsAsync(track.Id, ct).ConfigureAwait(false))
+        var existingPath = await _storage.FindExistingRelativePathAsync(track, ct).ConfigureAwait(false);
+        if (existingPath != null)
         {
             var existing = await _store.GetTrackIndexAsync(track.Id, ct).ConfigureAwait(false);
+            if (existing == null || !string.Equals(existing.RelativePath, existingPath, StringComparison.OrdinalIgnoreCase))
+            {
+                await _store.UpsertTrackIndexAsync(new TrackIndexEntry
+                {
+                    SpotifyTrackId = track.Id,
+                    YoutubeVideoId = existing?.YoutubeVideoId ?? item.YoutubeVideoId,
+                    MatchScore = existing?.MatchScore ?? item.MatchScore,
+                    RelativePath = existingPath,
+                    Title = track.Name,
+                    Artists = string.Join(", ", track.Artists),
+                    Album = track.Album,
+                    Isrc = track.Isrc
+                }, ct).ConfigureAwait(false);
+            }
+
             item.Status = "Completed";
-            item.RelativePath = existing?.RelativePath;
-            item.YoutubeVideoId = existing?.YoutubeVideoId;
-            item.MatchScore = existing?.MatchScore;
+            item.RelativePath = existingPath;
+            item.YoutubeVideoId = existing?.YoutubeVideoId ?? item.YoutubeVideoId;
+            item.MatchScore = existing?.MatchScore ?? item.MatchScore;
             item.Error = null;
             await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
+            _logger.LogInformation("Skipping {Track}; file already exists at {Path}", track.Name, existingPath);
             return;
         }
 
@@ -118,13 +136,8 @@ public class TrackDownloader
 
     private async Task DownloadAudioAsync(string videoId, string absolute, string format, CancellationToken ct)
     {
-        var ffmpeg = _ffmpeg.EncoderPath;
         var streamManifest = await _youtube.Videos.Streams.GetManifestAsync(videoId, ct).ConfigureAwait(false);
-        var audios = streamManifest.GetAudioOnlyStreams()
-            .OrderByDescending(s =>
-                string.Equals(format, "m4a", StringComparison.OrdinalIgnoreCase) && s.Container == Container.Mp4)
-            .ThenByDescending(s => s.Bitrate)
-            .ToList();
+        var audios = PickAudioStreams(streamManifest.GetAudioOnlyStreams().ToList(), format);
         if (audios.Count == 0)
         {
             throw new InvalidOperationException("No audio streams found.");
@@ -133,44 +146,138 @@ public class TrackDownloader
         Exception? lastForbidden = null;
         foreach (var audio in audios)
         {
+            var temp = absolute + ".src" + audio.Container.Name;
             try
             {
-                if (string.Equals(format, "m4a", StringComparison.OrdinalIgnoreCase) &&
-                    audio.Container == Container.Mp4)
+                await _youtube.Videos.Streams.DownloadAsync(audio, temp, cancellationToken: ct).ConfigureAwait(false);
+                if (ContainerMatchesFormat(audio.Container, format))
                 {
-                    await _youtube.Videos.Streams.DownloadAsync(audio, absolute, cancellationToken: ct).ConfigureAwait(false);
-                    return;
+                    File.Move(temp, absolute, overwrite: true);
+                }
+                else
+                {
+                    await ConvertAudioAsync(temp, absolute, format, TargetBitrateKbps(audio), ct).ConfigureAwait(false);
+                    TryDelete(temp);
                 }
 
-                await _youtube.Videos.DownloadAsync(
-                    videoId,
-                    absolute,
-                    o => o
-                        .SetFFmpegPath(ffmpeg)
-                        .SetContainer(format),
-                    cancellationToken: ct).ConfigureAwait(false);
                 return;
             }
             catch (HttpRequestException ex) when (IsForbidden(ex))
             {
                 lastForbidden = ex;
-                _logger.LogWarning("YouTube returned 403 for {VideoId} ({Container}); trying next stream", videoId, audio.Container);
+                TryDelete(temp);
+                _logger.LogWarning("YouTube returned 403 for {VideoId} ({Container} {Bitrate}); trying next stream",
+                    videoId, audio.Container, audio.Bitrate);
+            }
+            catch
+            {
+                TryDelete(temp);
+                throw;
             }
         }
 
+        throw lastForbidden ?? new InvalidOperationException("No playable audio streams.");
+    }
+
+    private static List<IAudioStreamInfo> PickAudioStreams(IReadOnlyList<IAudioStreamInfo> streams, string format)
+    {
+        var quality = (Plugin.Instance?.Configuration.AudioQuality ?? "highest").Trim().ToLowerInvariant();
+        var ordered = streams
+            .OrderByDescending(s => s.Bitrate.BitsPerSecond)
+            .ThenByDescending(s => ContainerMatchesFormat(s.Container, format))
+            .ToList();
+
+        if (ordered.Count == 0)
+        {
+            return ordered;
+        }
+
+        var selected = quality switch
+        {
+            "low" => ClosestBitrate(ordered, 64_000),
+            "medium" => ClosestBitrate(ordered, 128_000),
+            "high" => ordered.FirstOrDefault(s => s.Bitrate.BitsPerSecond >= 128_000) ?? ordered[0],
+            _ => ordered[0]
+        };
+
+        return new[] { selected }.Concat(ordered.Where(s => !ReferenceEquals(s, selected))).ToList();
+    }
+
+    private static IAudioStreamInfo ClosestBitrate(IReadOnlyList<IAudioStreamInfo> streams, long target)
+    {
+        return streams.OrderBy(s => Math.Abs(s.Bitrate.BitsPerSecond - target)).First();
+    }
+
+    private static bool ContainerMatchesFormat(Container container, string format)
+    {
+        var name = container.Name.ToLowerInvariant();
+        return format switch
+        {
+            "m4a" => name is "mp4" or "m4a" or "m4b",
+            "mp3" => name == "mp3",
+            "opus" => name is "webm" or "opus",
+            "ogg" => name is "ogg" or "oggs" or "opus" or "webm",
+            _ => false
+        };
+    }
+
+    private static int TargetBitrateKbps(IAudioStreamInfo audio)
+    {
+        var source = Math.Max(64, (int)Math.Round(audio.Bitrate.BitsPerSecond / 1000.0));
+        return (Plugin.Instance?.Configuration.AudioQuality ?? "highest").Trim().ToLowerInvariant() switch
+        {
+            "low" => Math.Min(source, 96),
+            "medium" => Math.Min(source, 128),
+            "high" => Math.Min(source, 192),
+            _ => source
+        };
+    }
+
+    private async Task ConvertAudioAsync(string source, string dest, string format, int bitrateKbps, CancellationToken ct)
+    {
+        var codec = format switch
+        {
+            "mp3" => "libmp3lame",
+            "opus" => "libopus",
+            "ogg" => "libvorbis",
+            _ => "aac"
+        };
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = _ffmpeg.EncoderPath,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (var arg in new[] { "-y", "-i", source, "-vn", "-c:a", codec, "-b:a", bitrateKbps + "k", dest })
+        {
+            psi.ArgumentList.Add(arg);
+        }
+
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start FFmpeg.");
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+        if (process.ExitCode != 0 || !File.Exists(dest))
+        {
+            var stderr = await stderrTask.ConfigureAwait(false);
+            throw new InvalidOperationException("FFmpeg convert failed: " + stderr.Trim());
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
         try
         {
-            await _youtube.Videos.DownloadAsync(
-                videoId,
-                absolute,
-                o => o
-                    .SetFFmpegPath(ffmpeg)
-                    .SetContainer(format),
-                cancellationToken: ct).ConfigureAwait(false);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
         }
-        catch (HttpRequestException ex) when (IsForbidden(ex))
+        catch
         {
-            throw lastForbidden ?? ex;
+            // temp cleanup is best-effort
         }
     }
 

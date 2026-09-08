@@ -60,13 +60,53 @@ public partial class LibraryStorage
 
     public async Task<bool> TrackFileExistsAsync(string spotifyTrackId, CancellationToken ct = default)
     {
+        return await FindExistingRelativePathAsync(spotifyTrackId, null, ct).ConfigureAwait(false) != null;
+    }
+
+    public async Task<string?> FindExistingRelativePathAsync(SpotifyTrackInfo track, CancellationToken ct = default)
+    {
+        return await FindExistingRelativePathAsync(track.Id, track, ct).ConfigureAwait(false);
+    }
+
+    public async Task<string?> FindExistingRelativePathAsync(
+        string spotifyTrackId,
+        SpotifyTrackInfo? track,
+        CancellationToken ct = default)
+    {
         var entry = await _store.GetTrackIndexAsync(spotifyTrackId, ct).ConfigureAwait(false);
-        if (string.IsNullOrEmpty(entry?.RelativePath))
+        if (!string.IsNullOrEmpty(entry?.RelativePath) && FileExistsNonEmpty(GetAbsolutePath(entry.RelativePath)))
+        {
+            return entry.RelativePath;
+        }
+
+        if (track == null)
+        {
+            return null;
+        }
+
+        var preferred = (Plugin.Instance?.Configuration.PreferredFormat ?? "m4a").Trim('.').ToLowerInvariant();
+        foreach (var ext in new[] { preferred, "m4a", "mp3", "opus", "ogg" }.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var relative = BuildRelativePath(track, ext);
+            if (FileExistsNonEmpty(GetAbsolutePath(relative)))
+            {
+                return relative;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool FileExistsNonEmpty(string path)
+    {
+        try
+        {
+            return File.Exists(path) && new FileInfo(path).Length > 0;
+        }
+        catch
         {
             return false;
         }
-
-        return File.Exists(GetAbsolutePath(entry.RelativePath));
     }
 
     public async Task SaveCoverAsync(string albumFolderAbsolute, string? coverUrl, CancellationToken ct = default)

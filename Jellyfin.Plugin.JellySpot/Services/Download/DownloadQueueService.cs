@@ -7,6 +7,7 @@ namespace Jellyfin.Plugin.JellySpot.Services.Download;
 public class DownloadQueueService
 {
     private readonly JellySpotStore _store;
+    private readonly LibraryStorage _storage;
     private readonly TrackDownloader _downloader;
     private readonly ILogger<DownloadQueueService> _logger;
     private readonly SemaphoreSlim _workerLock = new(1, 1);
@@ -15,16 +16,23 @@ public class DownloadQueueService
 
     public DownloadQueueService(
         JellySpotStore store,
+        LibraryStorage storage,
         TrackDownloader downloader,
         ILogger<DownloadQueueService> logger)
     {
         _store = store;
+        _storage = storage;
         _downloader = downloader;
         _logger = logger;
     }
 
-    public async Task EnqueueTrackAsync(Guid userId, SpotifyTrackInfo track, string? playlistId = null, string? playlistName = null, CancellationToken ct = default)
+    public async Task<EnqueueResult> EnqueueTrackAsync(Guid userId, SpotifyTrackInfo track, string? playlistId = null, string? playlistName = null, CancellationToken ct = default)
     {
+        if (await _storage.FindExistingRelativePathAsync(track, ct).ConfigureAwait(false) != null)
+        {
+            return EnqueueResult.AlreadyDownloaded;
+        }
+
         var item = new QueueItem
         {
             JellyfinUserId = userId,
@@ -43,8 +51,13 @@ public class DownloadQueueService
             PlaylistName = playlistName,
             Status = "Pending"
         };
-        await _store.EnqueueAsync(item, ct).ConfigureAwait(false);
-        EnsureWorker();
+        var result = await _store.EnqueueAsync(item, ct).ConfigureAwait(false);
+        if (result is EnqueueResult.Added or EnqueueResult.Retried)
+        {
+            EnsureWorker();
+        }
+
+        return result;
     }
 
     public void EnsureWorker()

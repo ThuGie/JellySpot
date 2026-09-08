@@ -669,7 +669,17 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
 
             req.then(function (res) {
-                self.setBrowseStatus(root, 'Queued ' + (self.pick(res, 'Queued', 'queued') != null ? self.pick(res, 'Queued', 'queued') : name));
+                const queued = self.pick(res, 'Queued', 'queued');
+                const skipped = self.pick(res, 'Skipped', 'skipped');
+                if (queued == null && skipped == null) {
+                    self.setBrowseStatus(root, 'Queued ' + name);
+                    return;
+                }
+                let message = 'Queued ' + (queued || 0);
+                if (skipped) {
+                    message += ', skipped ' + skipped + ' already present';
+                }
+                self.setBrowseStatus(root, message);
             }).catch(function () {
                 self.setBrowseStatus(root, 'Queue failed — link Spotify under Sync first.');
             });

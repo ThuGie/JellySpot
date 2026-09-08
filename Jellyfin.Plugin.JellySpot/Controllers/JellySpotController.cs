@@ -126,7 +126,8 @@ public class JellySpotController : ControllerBase
         current.SpotifyRequestsPerSecond = Math.Clamp(config.SpotifyRequestsPerSecond, 0.2, 10);
         current.SpotifyMaxConcurrentRequests = Math.Clamp(config.SpotifyMaxConcurrentRequests, 1, 8);
         current.DownloadConcurrency = Math.Clamp(config.DownloadConcurrency, 1, 8);
-        current.PreferredFormat = string.IsNullOrWhiteSpace(config.PreferredFormat) ? "m4a" : config.PreferredFormat;
+        current.PreferredFormat = string.IsNullOrWhiteSpace(config.PreferredFormat) ? "m4a" : config.PreferredFormat.Trim('.').ToLowerInvariant();
+        current.AudioQuality = NormalizeAudioQuality(config.AudioQuality);
         current.MinMatchScore = Math.Clamp(config.MinMatchScore, 50, 100);
         current.SyncIntervalMinutes = Math.Max(15, config.SyncIntervalMinutes);
         current.TriggerLibraryRefresh = config.TriggerLibraryRefresh;
@@ -308,6 +309,8 @@ public class JellySpotController : ControllerBase
     public async Task<ActionResult> QueueTracks([FromBody] QueueTracksRequest request, CancellationToken ct)
     {
         var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
+        var queued = 0;
+        var skipped = 0;
         foreach (var trackId in request.TrackIds.Distinct())
         {
             var track = await _spotify.GetTrackAsync(userId, trackId, ct).ConfigureAwait(false);
@@ -316,10 +319,10 @@ public class JellySpotController : ControllerBase
                 continue;
             }
 
-            await _queue.EnqueueTrackAsync(userId, track, request.PlaylistId, request.PlaylistName, ct).ConfigureAwait(false);
+            Tally(await _queue.EnqueueTrackAsync(userId, track, request.PlaylistId, request.PlaylistName, ct).ConfigureAwait(false), ref queued, ref skipped);
         }
 
-        return Ok(new { Queued = request.TrackIds.Count });
+        return Ok(new { Queued = queued, Skipped = skipped });
     }
 
     [HttpPost("Queue/Playlist/{id}")]
@@ -333,9 +336,11 @@ public class JellySpotController : ControllerBase
             return NotFound();
         }
 
+        var queued = 0;
+        var skipped = 0;
         foreach (var track in result.Value.Tracks)
         {
-            await _queue.EnqueueTrackAsync(userId, track, result.Value.Playlist.Id, result.Value.Playlist.Name, ct).ConfigureAwait(false);
+            Tally(await _queue.EnqueueTrackAsync(userId, track, result.Value.Playlist.Id, result.Value.Playlist.Name, ct).ConfigureAwait(false), ref queued, ref skipped);
         }
 
         var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
@@ -345,7 +350,7 @@ public class JellySpotController : ControllerBase
             await _store.SaveUserSettingsAsync(settings, ct).ConfigureAwait(false);
         }
 
-        return Ok(new { Queued = result.Value.Tracks.Count, Monitored = true });
+        return Ok(new { Queued = queued, Skipped = skipped, Monitored = true });
     }
 
     [HttpPost("Queue/Liked")]
@@ -354,15 +359,17 @@ public class JellySpotController : ControllerBase
     {
         var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
         var tracks = await _spotify.GetLikedSongsAsync(userId, ct).ConfigureAwait(false);
+        var queued = 0;
+        var skipped = 0;
         foreach (var track in tracks)
         {
-            await _queue.EnqueueTrackAsync(userId, track, "liked", "Liked Songs", ct).ConfigureAwait(false);
+            Tally(await _queue.EnqueueTrackAsync(userId, track, "liked", "Liked Songs", ct).ConfigureAwait(false), ref queued, ref skipped);
         }
 
         var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
         settings.SyncLikedSongs = true;
         await _store.SaveUserSettingsAsync(settings, ct).ConfigureAwait(false);
-        return Ok(new { Queued = tracks.Count });
+        return Ok(new { Queued = queued, Skipped = skipped });
     }
 
     [HttpPost("Queue/Album/{id}")]
@@ -371,9 +378,11 @@ public class JellySpotController : ControllerBase
     {
         var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
         var tracks = await _spotify.GetAlbumTracksAsync(userId, id, ct).ConfigureAwait(false);
+        var queued = 0;
+        var skipped = 0;
         foreach (var track in tracks)
         {
-            await _queue.EnqueueTrackAsync(userId, track, id, track.Album, ct).ConfigureAwait(false);
+            Tally(await _queue.EnqueueTrackAsync(userId, track, id, track.Album, ct).ConfigureAwait(false), ref queued, ref skipped);
         }
 
         var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
@@ -383,7 +392,7 @@ public class JellySpotController : ControllerBase
             await _store.SaveUserSettingsAsync(settings, ct).ConfigureAwait(false);
         }
 
-        return Ok(new { Queued = tracks.Count });
+        return Ok(new { Queued = queued, Skipped = skipped });
     }
 
     [HttpGet("Queue")]
@@ -424,6 +433,23 @@ public class JellySpotController : ControllerBase
     {
         await _sync.SyncUserAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         return Ok(new { Status = "started" });
+    }
+
+    private static void Tally(EnqueueResult result, ref int queued, ref int skipped)
+    {
+        if (result is EnqueueResult.Added or EnqueueResult.Retried)
+        {
+            queued++;
+            return;
+        }
+
+        skipped++;
+    }
+
+    private static string NormalizeAudioQuality(string? value)
+    {
+        var quality = (value ?? "highest").Trim().ToLowerInvariant();
+        return quality is "highest" or "high" or "medium" or "low" ? quality : "highest";
     }
 
     private Guid GetUserId()

@@ -75,6 +75,16 @@
                                 <option value="ogg">ogg</option>
                             </select>
                         </div>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="audioQuality">Audio quality</label>
+                            <select is="emby-select" id="audioQuality" class="emby-select-withcolor">
+                                <option value="highest">Highest available</option>
+                                <option value="high">High (~192 kbps)</option>
+                                <option value="medium">Medium (~128 kbps)</option>
+                                <option value="low">Low (~96 kbps)</option>
+                            </select>
+                            <div class="fieldDescription">YouTube audio stream to keep. Highest is the default.</div>
+                        </div>
                         <div class="inputContainer">
                             <input is="emby-input" type="number" id="minMatchScore" label="Minimum match score" />
                         </div>
@@ -195,6 +205,18 @@
             function splitCsv(value) {
                 return (value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
             }
+            function formatQueueResult(res, name) {
+                var queued = pick(res, 'Queued', 'queued');
+                var skipped = pick(res, 'Skipped', 'skipped');
+                if (queued == null && skipped == null) {
+                    return 'Queued ' + name;
+                }
+                var parts = ['Queued ' + (queued || 0)];
+                if (skipped) {
+                    parts.push('skipped ' + skipped + ' already present');
+                }
+                return parts.join(', ');
+            }
 
             function showTab(name) {
                 page.querySelectorAll('.jellyspot-panel').forEach(function (el) {
@@ -223,6 +245,7 @@
                 setVal('spotifyRequestsPerSecond', pick(config, 'SpotifyRequestsPerSecond', 'spotifyRequestsPerSecond') ?? 2);
                 setVal('downloadConcurrency', pick(config, 'DownloadConcurrency', 'downloadConcurrency') ?? 2);
                 setVal('preferredFormat', pick(config, 'PreferredFormat', 'preferredFormat') || 'm4a');
+                setVal('audioQuality', pick(config, 'AudioQuality', 'audioQuality') || 'highest');
                 setVal('minMatchScore', pick(config, 'MinMatchScore', 'minMatchScore') ?? 80);
                 setVal('syncIntervalMinutes', pick(config, 'SyncIntervalMinutes', 'syncIntervalMinutes') ?? 60);
                 setVal('cacheTtlDays', pick(config, 'CacheTtlDays', 'cacheTtlDays') ?? 10);
@@ -240,6 +263,7 @@
                 config.SpotifyMaxConcurrentRequests = 2;
                 config.DownloadConcurrency = parseInt(val('downloadConcurrency'), 10) || 2;
                 config.PreferredFormat = val('preferredFormat') || 'm4a';
+                config.AudioQuality = val('audioQuality') || 'highest';
                 config.MinMatchScore = parseFloat(val('minMatchScore')) || 80;
                 config.SyncIntervalMinutes = parseInt(val('syncIntervalMinutes'), 10) || 60;
                 config.CacheTtlDays = parseInt(val('cacheTtlDays'), 10) || 10;
@@ -406,7 +430,7 @@
 
                 req.then(function (res) {
                     Dashboard.hideLoadingMsg();
-                    setBrowseStatus('Queued ' + (pick(res, 'Queued', 'queued') != null ? pick(res, 'Queued', 'queued') : name));
+                    setBrowseStatus(formatQueueResult(res, name));
                 }).catch(function () {
                     Dashboard.hideLoadingMsg();
                     setBrowseStatus('Queue failed — link Spotify under Sync first.');

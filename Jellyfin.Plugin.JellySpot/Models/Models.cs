@@ -106,6 +106,14 @@ public class QueueItem
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+public enum EnqueueResult
+{
+    Added,
+    AlreadyQueued,
+    AlreadyDownloaded,
+    Retried
+}
+
 public class PlaylistSnapshot
 {
     public string PlaylistId { get; set; } = string.Empty;
