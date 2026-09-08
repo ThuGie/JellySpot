@@ -23,6 +23,19 @@
 
 #indexPage.jellyspot-is-open .tabContent[data-jellyspot-tab="browse"] {
     display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    flex: 1 1 100% !important;
+    align-self: stretch !important;
+    box-sizing: border-box;
+}
+
+#indexPage.jellyspot-is-open .jellyspot-browse-sections {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+    padding-top: 0.75em;
+    padding-bottom: 3em;
 }
 
 #indexPage .tabContent[data-jellyspot-tab="liked"],
@@ -61,32 +74,63 @@
 .jellyspot-liked-sections,
 .jellyspot-sync-sections,
 .jellyspot-queue-sections {
-    padding: 0.25em 0 2.25em;
+    width: 100%;
 }
 
 .jellyspot-app {
-    max-width: 1280px;
-    padding: 0 0.25em 3em;
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
 }
 
-.jellyspot-topbar {
+.jellyspot-page-head {
     display: flex;
     align-items: center;
     gap: 1em;
-    margin: 0 0 0.85em;
+    margin: 0 0 0.35em;
 }
 
-.jellyspot-brand {
-    font-size: 1.35rem;
-    font-weight: 760;
-    letter-spacing: -0.03em;
+.jellyspot-page-head .sectionTitle {
+    margin: 0;
     flex: 0 0 auto;
 }
 
-.jellyspot-topbar .jellyspot-search {
+.jellyspot-page-head .jellyspot-search {
     flex: 1 1 auto;
-    min-width: 0;
+    min-width: 12em;
     margin: 0;
+}
+
+.jellyspot-page-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35em 1.35em;
+    margin: 0 0 1.15em;
+    padding: 0 0 0.55em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.jellyspot-page-tab {
+    appearance: none;
+    border: 0;
+    background: none;
+    padding: 0.45em 0 0.55em;
+    margin: 0;
+    font: inherit;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--secondaryTextColor, rgba(255, 255, 255, 0.6));
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+}
+
+.jellyspot-page-tab:hover {
+    color: inherit;
+}
+
+.jellyspot-page-tab.is-active {
+    color: inherit;
+    border-bottom-color: var(--theme-primary-color, #00a4dc);
 }
 
 .jellyspot-featured {
@@ -320,11 +364,12 @@
 .jellyspot-shelf {
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(168px, 180px);
-    gap: 0.85em;
+    grid-auto-columns: minmax(13.3em, 16em);
+    gap: 1em;
     overflow-x: auto;
-    padding: 0.15em 0 0.85em;
+    padding: 0.15em 0 1em;
     scroll-snap-type: x mandatory;
+    width: 100%;
 }
 
 .jellyspot-shelf .jellyspot-card {
@@ -377,8 +422,9 @@
 
 .jellyspot-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-    gap: 0.9em;
+    grid-template-columns: repeat(auto-fill, minmax(13.3em, 1fr));
+    gap: 1.1em;
+    width: 100%;
 }
 
 .jellyspot-card {

@@ -88,7 +88,7 @@ public class SpotifyApiClient
         var metaJson = await GetStringAsync(
                 userId,
                 $"/playlists/{Uri.EscapeDataString(playlistId)}",
-                $"playlist-v3:{playlistId}",
+                $"playlist-v4:{playlistId}",
                 TimeSpan.FromHours(12),
                 ct)
             .ConfigureAwait(false);
@@ -102,7 +102,7 @@ public class SpotifyApiClient
         var tracks = new List<SpotifyTrackInfo>();
         string? next = null;
 
-        if (metaDoc.RootElement.TryGetProperty("tracks", out var embedded))
+        if (TryGetPlaylistPaging(metaDoc.RootElement, out var embedded))
         {
             AddTracksFromPage(embedded, tracks);
             next = ReadNext(embedded);
@@ -110,27 +110,17 @@ public class SpotifyApiClient
 
         if (tracks.Count == 0)
         {
-            next = PlaylistTracksPath(playlistId, 0);
+            await FollowTrackPagesAsync(userId, playlistId, PlaylistItemsPath(playlistId, 0), tracks, ct).ConfigureAwait(false);
         }
-
-        await FollowTrackPagesAsync(userId, playlistId, next, tracks, ct).ConfigureAwait(false);
-
-        if (tracks.Count == 0 && playlist.TrackCount > 0)
+        else if (!string.IsNullOrWhiteSpace(next))
         {
-            const string fields = "items(track(id,name,duration_ms,track_number,disc_number,type,artists(name),album(id,name,images,artists(name),release_date),external_ids)),next,total";
-            await FollowTrackPagesAsync(
-                    userId,
-                    playlistId,
-                    $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks?limit=50&offset=0&fields={Uri.EscapeDataString(fields)}",
-                    tracks,
-                    ct)
-                .ConfigureAwait(false);
+            await FollowTrackPagesAsync(userId, playlistId, next, tracks, ct).ConfigureAwait(false);
         }
 
         if (tracks.Count == 0 && playlist.TrackCount > 0)
         {
             _logger.LogWarning(
-                "Playlist {PlaylistId} reports {Count} tracks but Spotify returned none readable",
+                "Playlist {PlaylistId} reports {Count} items but Spotify returned none. Development Mode only returns items for playlists you own or collaborate on.",
                 playlistId,
                 playlist.TrackCount);
         }
@@ -186,8 +176,26 @@ public class SpotifyApiClient
 
     public async Task<SpotifyTrackInfo?> GetTrackAsync(Guid userId, string trackId, CancellationToken ct = default)
     {
-        var map = await GetTracksAsync(userId, [trackId], ct).ConfigureAwait(false);
-        return map.TryGetValue(trackId, out var track) ? track : null;
+        if (string.IsNullOrWhiteSpace(trackId))
+        {
+            return null;
+        }
+
+        var json = await GetStringAsync(
+                userId,
+                $"/tracks/{Uri.EscapeDataString(trackId.Trim())}",
+                $"track:{trackId.Trim()}",
+                TimeSpan.FromDays(10),
+                ct)
+            .ConfigureAwait(false);
+        if (json == null)
+        {
+            return null;
+        }
+
+        using var doc = JsonDocument.Parse(json);
+        var track = ParseTrack(doc.RootElement);
+        return string.IsNullOrEmpty(track.Id) ? null : track;
     }
 
     public async Task<IReadOnlyDictionary<string, SpotifyTrackInfo>> GetTracksAsync(
@@ -196,41 +204,15 @@ public class SpotifyApiClient
         CancellationToken ct = default)
     {
         var found = new Dictionary<string, SpotifyTrackInfo>(StringComparer.OrdinalIgnoreCase);
-        var ids = trackIds
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Select(id => id.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        for (var i = 0; i < ids.Count; i += 50)
+        foreach (var id in trackIds
+                     .Where(id => !string.IsNullOrWhiteSpace(id))
+                     .Select(id => id.Trim())
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var chunk = ids.Skip(i).Take(50).ToList();
-            var path = "/tracks?ids=" + string.Join(",", chunk.Select(Uri.EscapeDataString));
-            var json = await GetStringAsync(userId, path, "tracks-batch:" + string.Join(",", chunk), TimeSpan.FromHours(12), ct)
-                .ConfigureAwait(false);
-            if (json == null)
+            var track = await GetTrackAsync(userId, id, ct).ConfigureAwait(false);
+            if (track != null)
             {
-                continue;
-            }
-
-            using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("tracks", out var tracks) || tracks.ValueKind != JsonValueKind.Array)
-            {
-                continue;
-            }
-
-            foreach (var item in tracks.EnumerateArray())
-            {
-                if (item.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                var track = ParseTrack(item);
-                if (!string.IsNullOrEmpty(track.Id))
-                {
-                    found[track.Id] = track;
-                }
+                found[track.Id] = track;
             }
         }
 
@@ -466,50 +448,10 @@ public class SpotifyApiClient
         return string.IsNullOrEmpty(artist.Id) ? null : artist;
     }
 
-    public async Task<IReadOnlyList<SpotifyTrackInfo>> GetArtistTopTracksAsync(Guid userId, string artistId, CancellationToken ct = default)
+    public Task<IReadOnlyList<SpotifyTrackInfo>> GetArtistTopTracksAsync(Guid userId, string artistId, CancellationToken ct = default)
     {
-        foreach (var market in new[] { "from_token", "US" })
-        {
-            var json = await GetStringAsync(
-                    userId,
-                    $"/artists/{Uri.EscapeDataString(artistId)}/top-tracks?market={market}",
-                    $"artist-top:{artistId}:{market}",
-                    TimeSpan.FromHours(12),
-                    ct)
-                .ConfigureAwait(false);
-            if (json == null)
-            {
-                continue;
-            }
-
-            using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("tracks", out var tracks) || tracks.ValueKind != JsonValueKind.Array)
-            {
-                continue;
-            }
-
-            var list = new List<SpotifyTrackInfo>();
-            foreach (var item in tracks.EnumerateArray())
-            {
-                if (item.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                var track = ParseTrack(item);
-                if (!string.IsNullOrEmpty(track.Id))
-                {
-                    list.Add(track);
-                }
-            }
-
-            if (list.Count > 0)
-            {
-                return list;
-            }
-        }
-
-        return [];
+        _ = (userId, artistId, ct);
+        return Task.FromResult<IReadOnlyList<SpotifyTrackInfo>>([]);
     }
 
     public async Task<IReadOnlyList<SpotifyAlbumInfo>> GetArtistAlbumsAsync(Guid userId, string artistId, CancellationToken ct = default)
@@ -660,8 +602,8 @@ public class SpotifyApiClient
             pages++;
             var json = await GetStringAsync(
                     userId,
-                    StripPlaylistTrackQuery(NormalizeSpotifyPath(next)),
-                    $"playlist-tracks-v3:{playlistId}:{pages}",
+                    NormalizePlaylistItemsPath(next),
+                    $"playlist-items-v4:{playlistId}:{pages}",
                     TimeSpan.FromHours(12),
                     ct)
                 .ConfigureAwait(false);
@@ -694,6 +636,17 @@ public class SpotifyApiClient
             if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("track", out var nested) && nested.ValueKind == JsonValueKind.Object)
             {
                 trackEl = nested;
+            }
+            else if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("item", out var wrapped) && wrapped.ValueKind == JsonValueKind.Object)
+            {
+                if (wrapped.TryGetProperty("track", out var innerTrack) && innerTrack.ValueKind == JsonValueKind.Object)
+                {
+                    trackEl = innerTrack;
+                }
+                else
+                {
+                    trackEl = wrapped;
+                }
             }
             else if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("type", out var directType) && directType.GetString() == "track")
             {
@@ -729,9 +682,41 @@ public class SpotifyApiClient
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
-    private static string PlaylistTracksPath(string playlistId, int offset)
+    private static bool TryGetPlaylistPaging(JsonElement playlist, out JsonElement paging)
     {
-        return $"/playlists/{Uri.EscapeDataString(playlistId)}/tracks?limit=50&offset={offset}";
+        paging = default;
+        if (playlist.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Object)
+        {
+            paging = items;
+            return true;
+        }
+
+        if (playlist.TryGetProperty("tracks", out var tracks) && tracks.ValueKind == JsonValueKind.Object)
+        {
+            paging = tracks;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string PlaylistItemsPath(string playlistId, int offset)
+    {
+        return $"/playlists/{Uri.EscapeDataString(playlistId)}/items?limit=50&offset={offset}";
+    }
+
+    private static string NormalizePlaylistItemsPath(string pathOrUrl)
+    {
+        var value = StripPlaylistTrackQuery(NormalizeSpotifyPath(pathOrUrl));
+        var queryAt = value.IndexOf('?');
+        var pathPart = queryAt >= 0 ? value[..queryAt] : value;
+        var query = queryAt >= 0 ? value[queryAt..] : string.Empty;
+        if (pathPart.EndsWith("/tracks", StringComparison.OrdinalIgnoreCase))
+        {
+            pathPart = string.Concat(pathPart.AsSpan(0, pathPart.Length - "/tracks".Length), "/items");
+        }
+
+        return pathPart + query;
     }
 
     private static string StripPlaylistTrackQuery(string path)
@@ -831,11 +816,17 @@ public class SpotifyApiClient
             ImageUrl = GetBestImage(el)
         };
 
-        if (el.TryGetProperty("tracks", out var tracks) && tracks.TryGetProperty("total", out var total))
+        if (el.TryGetProperty("tracks", out var tracks)
+            && tracks.ValueKind == JsonValueKind.Object
+            && tracks.TryGetProperty("total", out var total)
+            && total.ValueKind == JsonValueKind.Number)
         {
             info.TrackCount = total.GetInt32();
         }
-        else if (el.TryGetProperty("items", out var items) && items.TryGetProperty("total", out var total2))
+        else if (el.TryGetProperty("items", out var itemsPaging)
+                 && itemsPaging.ValueKind == JsonValueKind.Object
+                 && itemsPaging.TryGetProperty("total", out var total2)
+                 && total2.ValueKind == JsonValueKind.Number)
         {
             info.TrackCount = total2.GetInt32();
         }

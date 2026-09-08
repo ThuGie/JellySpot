@@ -418,7 +418,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             panel.setAttribute('data-jellyspot-tab', id);
 
             const sections = document.createElement('div');
-            sections.className = 'sections ' + this.TAB_DEFS[id].sectionClass;
+            sections.className = 'sections padded-left padded-right ' + this.TAB_DEFS[id].sectionClass;
             panel.appendChild(sections);
             return panel;
         },
@@ -561,6 +561,10 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     panel = self.createTabPanel(id);
                     page.appendChild(panel);
                     changed = true;
+                }
+                const sections = panel.querySelector('.sections');
+                if (sections) {
+                    sections.classList.add('padded-left', 'padded-right');
                 }
             });
 
@@ -920,22 +924,19 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 root.innerHTML =
                     '<div class="jellyspot-app">' +
                     '<div class="jellyspot-toast-host" aria-live="polite"></div>' +
-                    '<header class="jellyspot-topbar">' +
-                    '<div class="jellyspot-brand">Spotify</div>' +
+                    '<div class="sectionTitleContainer sectionTitleContainer-cards jellyspot-page-head">' +
+                    '<h2 class="sectionTitle sectionTitle-cards">Spotify</h2>' +
                     '<div class="jellyspot-search">' +
                     '<input type="search" class="jellyspot-search-input" placeholder="Search songs, albums, playlists, artists" />' +
                     '</div>' +
                     '<div class="jellyspot-hero-who">' + who + '</div>' +
-                    '</header>' +
+                    '</div>' +
                     '<div class="jellyspot-identity" hidden></div>' +
-                    '<nav class="jellyspot-libnav" role="tablist">' +
-                    '<button type="button" class="jellyspot-libnav-btn is-active" data-lib="home">Home</button>' +
-                    '<button type="button" class="jellyspot-libnav-btn" data-lib="playlists">Playlists</button>' +
-                    '<button type="button" class="jellyspot-libnav-btn" data-lib="albums">Albums</button>' +
-                    '<button type="button" class="jellyspot-libnav-btn" data-lib="artists">Artists</button>' +
-                    '<button type="button" class="jellyspot-libnav-btn" data-lib="liked">Liked</button>' +
-                    '<button type="button" class="jellyspot-libnav-btn" data-lib="sync">Sync</button>' +
-                    '<button type="button" class="jellyspot-libnav-btn" data-lib="queue">Queue</button>' +
+                    '<nav class="jellyspot-page-tabs" role="tablist">' +
+                    '<button type="button" class="jellyspot-page-tab is-active" data-lib="home">Library</button>' +
+                    '<button type="button" class="jellyspot-page-tab" data-lib="liked">Liked</button>' +
+                    '<button type="button" class="jellyspot-page-tab" data-lib="sync">Sync</button>' +
+                    '<button type="button" class="jellyspot-page-tab" data-lib="queue">Queue</button>' +
                     '</nav>' +
                     '<div class="jellyspot-library-chrome">' +
                     '<div class="jellyspot-status jellyspot-browse-status">Loading your library…</div>' +
@@ -964,7 +965,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         self.searchBrowse(root);
                     }, 350);
                 });
-                root.querySelectorAll('.jellyspot-libnav-btn').forEach(function (btn) {
+                root.querySelectorAll('.jellyspot-page-tab').forEach(function (btn) {
                     btn.addEventListener('click', function () {
                         self.showLibrarySection(root, btn.getAttribute('data-lib'));
                     });
@@ -1263,17 +1264,32 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             return data;
         },
 
+        unwrapPlaylistItem: function (item) {
+            if (!item || typeof item !== 'object') {
+                return item;
+            }
+            if (item.track || item.Track) {
+                return item.track || item.Track;
+            }
+            if (item.item || item.Item) {
+                var wrapped = item.item || item.Item;
+                if (wrapped && (wrapped.track || wrapped.Track)) {
+                    return wrapped.track || wrapped.Track;
+                }
+                return wrapped;
+            }
+            return item;
+        },
+
         coerceTracks: function (tracks) {
             if (Array.isArray(tracks)) {
-                return tracks;
+                return tracks.map(this.unwrapPlaylistItem.bind(this)).filter(Boolean);
             }
             if (tracks && Array.isArray(tracks.items)) {
-                return tracks.items.map(function (item) {
-                    return item && (item.track || item.Track) ? (item.track || item.Track) : item;
-                }).filter(Boolean);
+                return tracks.items.map(this.unwrapPlaylistItem.bind(this)).filter(Boolean);
             }
             if (tracks && Array.isArray(tracks.$values)) {
-                return tracks.$values;
+                return tracks.$values.map(this.unwrapPlaylistItem.bind(this)).filter(Boolean);
             }
             return [];
         },
@@ -1377,6 +1393,15 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
             const tracks = this.coerceTracks(spec.tracks);
             if (!tracks.length) {
+                if (spec.kind === 'playlist') {
+                    this.showStageMessage(
+                        root,
+                        'Spotify did not send these tracks',
+                        'Since February 2026, Development Mode apps only get playlist songs for playlists you own or collaborate on. Followed and public playlists show a cover but no track list. Liked Songs and albums still work — open a playlist you created.'
+                    );
+                    this.notify(root, 'Playlist tracks blocked by Spotify', 'error');
+                    return;
+                }
                 this.showStageMessage(root, 'No playable tracks', 'Spotify returned this ' + (spec.kind || 'item') + ' but none of the tracks were readable.');
                 this.notify(root, '0 tracks loaded', 'error');
                 return;
@@ -1622,8 +1647,11 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         },
 
         setLibraryNav: function (root, section) {
-            root.querySelectorAll('.jellyspot-libnav-btn').forEach(function (btn) {
-                btn.classList.toggle('is-active', btn.getAttribute('data-lib') === section);
+            const tab = (section === 'playlists' || section === 'albums' || section === 'artists' || section === 'home')
+                ? 'home'
+                : section;
+            root.querySelectorAll('.jellyspot-page-tab').forEach(function (btn) {
+                btn.classList.toggle('is-active', btn.getAttribute('data-lib') === tab);
             });
         },
 
