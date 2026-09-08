@@ -1,0 +1,278 @@
+#jellySpotConfigurationPage {
+    --jsp-surface-1: rgba(255, 255, 255, 0.03);
+    --jsp-surface-2: rgba(255, 255, 255, 0.05);
+    --jsp-border: rgba(255, 255, 255, 0.08);
+    --jsp-border-strong: rgba(255, 255, 255, 0.12);
+    --jsp-text-muted: rgba(255, 255, 255, 0.62);
+    --jsp-card-gradient: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
+    --jsp-accent: var(--primary-accent-color, var(--theme-primary-color, #00a4dc));
+}
+
+#jellySpotConfigurationPage.jsp-light {
+    --jsp-surface-1: rgba(0, 0, 0, 0.03);
+    --jsp-surface-2: rgba(0, 0, 0, 0.05);
+    --jsp-border: rgba(0, 0, 0, 0.1);
+    --jsp-border-strong: rgba(0, 0, 0, 0.16);
+    --jsp-text-muted: rgba(0, 0, 0, 0.62);
+    --jsp-card-gradient: linear-gradient(145deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.01) 100%);
+}
+
+#jellySpotConfigurationPage[data-role="page"] > [data-role="content"] {
+    overflow: visible;
+}
+
+#jellySpotConfigurationPage .content-primary {
+    max-width: 1180px;
+}
+
+#jellySpotConfigurationPage .jellySpotConfigurationForm {
+    max-width: none;
+}
+
+.jsp-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    margin: -8px -8px 1.25rem;
+    padding: 10px 8px 0;
+}
+
+.jsp-hero {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 1.1rem;
+    padding: 1.2rem 1.35rem;
+    border-radius: 1.15rem;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--jsp-accent) 20%, transparent), rgba(0, 164, 220, 0.06) 55%, transparent);
+    border: 1px solid var(--jsp-border);
+}
+
+.jsp-kicker {
+    margin: 0 0 0.2rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--jsp-text-muted);
+}
+
+.jsp-title {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin: 0 0 0.35rem;
+    font-size: 1.7rem;
+    font-weight: 700;
+}
+
+.jsp-title .material-icons {
+    color: var(--jsp-accent);
+}
+
+.jsp-lede {
+    margin: 0;
+    max-width: 40rem;
+    line-height: 1.45;
+    color: var(--jsp-text-muted);
+}
+
+.jsp-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45em;
+    align-content: flex-start;
+}
+
+.jsp-chip {
+    font-size: 0.8em;
+    padding: 0.32em 0.75em;
+    border-radius: 999px;
+    border: 1px solid var(--jsp-border-strong);
+    background: rgba(0, 0, 0, 0.16);
+}
+
+.jsp-chip.is-ok {
+    border-color: rgba(76, 175, 80, 0.7);
+    color: #81c784;
+}
+
+.jsp-chip.is-bad {
+    border-color: rgba(244, 67, 54, 0.7);
+    color: #ef9a9a;
+}
+
+.jsp-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    margin: 1rem 0 1.25rem;
+    padding: 0.35em;
+    border-radius: 999px;
+    background: var(--jsp-surface-2);
+    border: 1px solid var(--jsp-border);
+}
+
+.jsp-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    padding: 0.55em 1.05em;
+    border-radius: 999px;
+    cursor: pointer;
+    opacity: 0.72;
+    font-weight: 600;
+}
+
+.jsp-tab .material-icons {
+    font-size: 18px;
+}
+
+.jsp-tab.is-active {
+    background: var(--jsp-accent);
+    color: #fff;
+    opacity: 1;
+}
+
+.jsp-panel {
+    display: none;
+}
+
+.jsp-panel.is-active {
+    display: block;
+}
+
+.jsp-info {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    margin: 0 0 1rem;
+    padding: 0.9rem 1rem;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--jsp-accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--jsp-accent) 28%, transparent);
+}
+
+.jsp-info .material-icons {
+    color: var(--jsp-accent);
+}
+
+.jsp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem;
+}
+
+.jsp-card,
+.jsp-fieldset {
+    margin: 0 0 1rem;
+    padding: 1.15rem 1.25rem 1.05rem;
+    border-radius: 14px;
+    background: var(--jsp-card-gradient);
+    border: 1px solid var(--jsp-border);
+}
+
+.jsp-card-title,
+.jsp-fieldset legend {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+    font-weight: 650;
+}
+
+.jsp-card-title .material-icons,
+.jsp-fieldset legend .material-icons {
+    color: var(--jsp-accent);
+    font-size: 20px;
+}
+
+.jsp-card-copy {
+    margin: 0 0 1rem;
+    color: var(--jsp-text-muted);
+    line-height: 1.45;
+}
+
+.jsp-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.7rem;
+    margin-bottom: 1rem;
+}
+
+.jsp-status-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: 12px;
+    background: var(--jsp-surface-1);
+    border: 1px solid var(--jsp-border);
+    border-left: 3px solid var(--jsp-border-strong);
+}
+
+.jsp-status-card.is-ok {
+    border-left-color: #4caf50;
+}
+
+.jsp-status-card.is-bad {
+    border-left-color: #f44336;
+}
+
+.jsp-status-card .material-icons {
+    color: var(--jsp-accent);
+}
+
+.jsp-status-label {
+    font-weight: 650;
+}
+
+.jsp-status-detail {
+    font-size: 0.82em;
+    color: var(--jsp-text-muted);
+    line-height: 1.35;
+}
+
+.jsp-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin-top: 0.35rem;
+}
+
+.jsp-savebar {
+    position: sticky;
+    bottom: 0;
+    padding: 1rem 0 0.25rem;
+    background: linear-gradient(transparent, var(--background-color, #101010) 35%);
+}
+
+.jsp-browse-results {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 0.85em;
+    margin-top: 1em;
+}
+
+.jsp-queue-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.jsp-queue-table th,
+.jsp-queue-table td {
+    text-align: left;
+    padding: 0.6em 0.45em;
+    border-bottom: 1px solid var(--jsp-border);
+    vertical-align: top;
+}
+
+#jellyspotMonitoredPlaylists {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.25rem 0.75rem;
+    margin: 0.75rem 0 1rem;
+}

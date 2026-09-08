@@ -64,6 +64,9 @@ public class JellySpotController : ControllerBase
     [HttpGet("jellyspot-tabs.css")]
     public ActionResult GetTabsStylesheet() => ServeEmbedded("Inject.jellyspot-tabs.css", "text/css");
 
+    [HttpGet("Configuration/config.css")]
+    public ActionResult GetConfigStylesheet() => ServeEmbedded("Configuration.config.css", "text/css");
+
     [HttpGet("admin/health")]
     [Authorize(Policy = "RequiresElevation")]
     public ActionResult GetHealth()

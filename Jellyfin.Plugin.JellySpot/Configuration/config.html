@@ -1,187 +1,218 @@
 <div id="jellySpotConfigurationPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input,emby-checkbox,emby-select">
+    <script>
+        (function () {
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = ApiClient.getUrl('JellySpot/Configuration/config.css');
+            document.head.appendChild(link);
+        })();
+    </script>
     <div data-role="content">
         <div class="content-primary">
-            <div class="sectionTitleContainer">
-                <h2 class="sectionTitle">JellySpot</h2>
-            </div>
-            <p class="fieldDescription">
-                Home screen tabs <strong>Browse / Sync / Queue</strong> require the
-                <strong>File Transformation</strong> plugin (same as JellySeerr). Restart Jellyfin after install.
-                Admin settings stay here under Dashboard → JellySpot.
-            </p>
-            <div id="jellyspotDetectStatus" class="fieldDescription">Detecting FFmpeg and libraries…</div>
-
-            <div class="localnav" style="display:flex;gap:.35em;flex-wrap:wrap;margin:1em 0 1.25em;">
-                <button is="emby-button" type="button" class="raised button-submit jellyspot-tab" data-tab="admin"><span>Admin</span></button>
-                <button is="emby-button" type="button" class="raised jellyspot-tab" data-tab="sync"><span>Sync</span></button>
-                <button is="emby-button" type="button" class="raised jellyspot-tab" data-tab="browse"><span>Browse</span></button>
-                <button is="emby-button" type="button" class="raised jellyspot-tab" data-tab="queue"><span>Queue</span></button>
-            </div>
-
-            <!-- Admin -->
-            <div class="jellyspot-panel" data-panel="admin">
-                <form class="jellySpotConfigurationForm">
-                    <div class="verticalSection">
-                        <h3 class="sectionTitle">Storage</h3>
-                        <div class="selectContainer">
-                            <label class="selectLabel" for="selectedLibraryId">Music library</label>
-                            <select is="emby-select" id="selectedLibraryId" class="emby-select-withcolor">
-                                <option value="">Custom path…</option>
-                            </select>
-                            <div class="fieldDescription">Filled from Dashboard → Libraries (same source StreamReady uses). Music libraries are listed first.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="text" id="storageRootPath" label="Storage root path" />
-                            <div class="fieldDescription">Download folder. Picking a library above fills this with that library’s first folder.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="text" id="ffmpegPath" label="FFmpeg override (optional)" />
-                            <div class="fieldDescription" id="ffmpegPathHint">Leave empty to use Jellyfin’s encoder (Dashboard → Playback → Transcoding), then PATH.</div>
-                        </div>
-                        <label class="checkboxContainer">
-                            <input is="emby-checkbox" type="checkbox" id="triggerLibraryRefresh" />
-                            <span>Trigger Jellyfin library refresh after sync</span>
-                        </label>
-                    </div>
-
-                    <div class="verticalSection">
-                        <h3 class="sectionTitle">Spotify app</h3>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="text" id="spotifyClientId" label="Spotify Client ID" />
-                        </div>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="password" id="spotifyClientSecret" label="Spotify Client Secret" />
-                        </div>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="text" id="spotifyRedirectUri" label="OAuth redirect URI" />
-                            <div class="fieldDescription">Must match the Spotify Developer Dashboard. Example: http://127.0.0.1:8096/JellySpot/OAuth/Callback</div>
-                        </div>
-                    </div>
-
-                    <div class="verticalSection">
-                        <h3 class="sectionTitle">Limits</h3>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="number" id="spotifyRequestsPerSecond" label="Spotify requests / second" />
-                        </div>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="number" id="downloadConcurrency" label="Download concurrency" />
-                        </div>
-                        <div class="selectContainer">
-                            <label class="selectLabel" for="preferredFormat">Preferred format</label>
-                            <select is="emby-select" id="preferredFormat" class="emby-select-withcolor">
-                                <option value="m4a">m4a</option>
-                                <option value="mp3">mp3</option>
-                                <option value="opus">opus</option>
-                                <option value="ogg">ogg</option>
-                            </select>
-                        </div>
-                        <div class="selectContainer">
-                            <label class="selectLabel" for="audioQuality">Audio quality</label>
-                            <select is="emby-select" id="audioQuality" class="emby-select-withcolor">
-                                <option value="highest">Highest available</option>
-                                <option value="high">High (~192 kbps)</option>
-                                <option value="medium">Medium (~128 kbps)</option>
-                                <option value="low">Low (~96 kbps)</option>
-                            </select>
-                            <div class="fieldDescription">YouTube audio stream to keep. Highest is the default.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="number" id="minMatchScore" label="Minimum match score" />
-                        </div>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="number" id="syncIntervalMinutes" label="Sync interval (minutes)" />
-                        </div>
-                        <div class="inputContainer">
-                            <input is="emby-input" type="number" id="cacheTtlDays" label="Spotify cache TTL (days)" />
-                        </div>
-                    </div>
-
+            <div class="jsp-sticky">
+                <header class="jsp-hero">
                     <div>
-                        <button is="emby-button" type="submit" class="raised button-submit block">
+                        <p class="jsp-kicker">Jellyfin plugin</p>
+                        <h1 class="jsp-title"><span class="material-icons" aria-hidden="true">music_note</span>JellySpot</h1>
+                        <p class="jsp-lede">Link Spotify, choose a music library, and sync selected playlists into Jellyfin. Users browse from Home; this page is admin setup.</p>
+                    </div>
+                    <div id="jellyspotStatusChips" class="jsp-chips"></div>
+                </header>
+                <div class="jsp-tabs" role="tablist">
+                    <button type="button" class="jsp-tab jellyspot-tab is-active" data-tab="admin"><span class="material-icons" aria-hidden="true">tune</span>Admin</button>
+                    <button type="button" class="jsp-tab jellyspot-tab" data-tab="sync"><span class="material-icons" aria-hidden="true">sync</span>Sync</button>
+                    <button type="button" class="jsp-tab jellyspot-tab" data-tab="browse"><span class="material-icons" aria-hidden="true">library_music</span>Browse</button>
+                    <button type="button" class="jsp-tab jellyspot-tab" data-tab="queue"><span class="material-icons" aria-hidden="true">queue_music</span>Queue</button>
+                </div>
+            </div>
+
+            <div id="jellyspotDetectStatus" class="hide">Detecting FFmpeg and libraries…</div>
+
+            <div class="jellyspot-panel jsp-panel is-active" data-panel="admin">
+                <div class="jsp-info">
+                    <span class="material-icons" aria-hidden="true">info</span>
+                    <div>Home tabs need <strong>File Transformation</strong>. FFmpeg is taken from Jellyfin unless you override it. Save after changing storage or Spotify credentials.</div>
+                </div>
+                <div id="jellyspotStatusGrid" class="jsp-status-grid"></div>
+                <form class="jellySpotConfigurationForm">
+                    <div class="jsp-grid">
+                        <article class="jsp-card">
+                            <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">folder</span>Storage</h3>
+                            <p class="jsp-card-copy">Pick a music library or set a folder. Downloads land here and Jellyfin can scan them after sync.</p>
+                            <div class="selectContainer">
+                                <label class="selectLabel" for="selectedLibraryId">Music library</label>
+                                <select is="emby-select" id="selectedLibraryId" class="emby-select-withcolor">
+                                    <option value="">Custom path…</option>
+                                </select>
+                                <div class="fieldDescription">Filled from Dashboard → Libraries. Music libraries are listed first.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="storageRootPath" label="Storage root path" />
+                                <div class="fieldDescription">Picking a library fills this with that library’s first folder.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="ffmpegPath" label="FFmpeg override (optional)" />
+                                <div class="fieldDescription" id="ffmpegPathHint">Leave empty to use Jellyfin’s encoder, then PATH.</div>
+                            </div>
+                            <label class="checkboxContainer">
+                                <input is="emby-checkbox" type="checkbox" id="triggerLibraryRefresh" />
+                                <span>Refresh the Jellyfin library after sync</span>
+                            </label>
+                        </article>
+                        <article class="jsp-card">
+                            <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">vpn_key</span>Spotify app</h3>
+                            <p class="jsp-card-copy">From the Spotify Developer Dashboard. The redirect URI must match exactly.</p>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="spotifyClientId" label="Spotify Client ID" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="password" id="spotifyClientSecret" label="Spotify Client Secret" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="spotifyRedirectUri" label="OAuth redirect URI" />
+                                <div class="fieldDescription">Example: http://127.0.0.1:8096/JellySpot/OAuth/Callback</div>
+                            </div>
+                        </article>
+                    </div>
+                    <article class="jsp-card">
+                        <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">high_quality</span>Download quality</h3>
+                        <p class="jsp-card-copy">Existing files are never downloaded again. Quality picks the YouTube audio stream before conversion.</p>
+                        <div class="jsp-grid">
+                            <div class="selectContainer">
+                                <label class="selectLabel" for="preferredFormat">Preferred format</label>
+                                <select is="emby-select" id="preferredFormat" class="emby-select-withcolor">
+                                    <option value="m4a">m4a</option>
+                                    <option value="mp3">mp3</option>
+                                    <option value="opus">opus</option>
+                                    <option value="ogg">ogg</option>
+                                </select>
+                            </div>
+                            <div class="selectContainer">
+                                <label class="selectLabel" for="audioQuality">Audio quality</label>
+                                <select is="emby-select" id="audioQuality" class="emby-select-withcolor">
+                                    <option value="highest">Highest available</option>
+                                    <option value="high">High (~192 kbps)</option>
+                                    <option value="medium">Medium (~128 kbps)</option>
+                                    <option value="low">Low (~96 kbps)</option>
+                                </select>
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="number" id="minMatchScore" label="Minimum match score" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="number" id="downloadConcurrency" label="Download concurrency" />
+                            </div>
+                        </div>
+                    </article>
+                    <article class="jsp-card">
+                        <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">speed</span>Limits</h3>
+                        <div class="jsp-grid">
+                            <div class="inputContainer">
+                                <input is="emby-input" type="number" id="spotifyRequestsPerSecond" label="Spotify requests / second" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="number" id="syncIntervalMinutes" label="Sync interval (minutes)" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="number" id="cacheTtlDays" label="Spotify cache TTL (days)" />
+                            </div>
+                        </div>
+                    </article>
+                    <div class="jsp-savebar">
+                        <button is="emby-button" type="submit" class="raised button-submit">
                             <span>Save admin settings</span>
                         </button>
                     </div>
                 </form>
             </div>
 
-            <!-- Sync -->
-            <div class="jellyspot-panel hide" data-panel="sync">
-                <p>Link your Spotify account and choose what to keep mirrored.</p>
-                <div class="verticalSection">
-                    <div id="jellyspotLinkStatus" class="fieldDescription">Checking link status…</div>
-                    <div style="display:flex;gap:.5em;flex-wrap:wrap;margin:.75em 0;">
-                        <button is="emby-button" type="button" class="raised button-submit" id="jellyspotLinkBtn"><span>Link Spotify</span></button>
-                        <button is="emby-button" type="button" class="raised" id="jellyspotUnlinkBtn"><span>Unlink</span></button>
-                        <button is="emby-button" type="button" class="raised" id="jellyspotSyncNowBtn"><span>Sync now</span></button>
-                    </div>
+            <div class="jellyspot-panel jsp-panel" data-panel="sync">
+                <div class="jsp-grid">
+                    <article class="jsp-card">
+                        <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">link</span>Spotify account</h3>
+                        <p class="jsp-card-copy" id="jellyspotLinkStatus">Checking link status…</p>
+                        <div class="jsp-actions">
+                            <button is="emby-button" type="button" class="raised button-submit" id="jellyspotLinkBtn"><span>Link Spotify</span></button>
+                            <button is="emby-button" type="button" class="raised" id="jellyspotUnlinkBtn"><span>Unlink</span></button>
+                            <button is="emby-button" type="button" class="raised" id="jellyspotSyncNowBtn"><span>Sync now</span></button>
+                        </div>
+                        <div id="jellyspotSyncMeta" class="fieldDescription" style="margin-top:.85em;"></div>
+                    </article>
+                    <article class="jsp-card">
+                        <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">settings_suggest</span>What to mirror</h3>
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="jellyspotEnabled" />
+                            <span>Enable automatic sync for my account</span>
+                        </label>
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="jellyspotLiked" />
+                            <span>Sync Liked Songs</span>
+                        </label>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="jellyspotInclude" label="Include artist filters (comma separated)" />
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="jellyspotExclude" label="Exclude artist filters (comma separated)" />
+                        </div>
+                    </article>
                 </div>
-                <div class="verticalSection">
-                    <label class="checkboxContainer">
-                        <input is="emby-checkbox" type="checkbox" id="jellyspotEnabled" />
-                        <span>Enable automatic sync for my account</span>
-                    </label>
-                    <label class="checkboxContainer">
-                        <input is="emby-checkbox" type="checkbox" id="jellyspotLiked" />
-                        <span>Sync Liked Songs</span>
-                    </label>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="text" id="jellyspotInclude" label="Include artist filters (comma separated)" />
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="text" id="jellyspotExclude" label="Exclude artist filters (comma separated)" />
-                    </div>
-                    <h3 class="sectionTitle">Monitored playlists</h3>
+                <article class="jsp-card">
+                    <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">playlist_add_check</span>Monitored playlists</h3>
+                    <p class="jsp-card-copy">Checked playlists are kept in sync. Users can also monitor from Home → Browse.</p>
                     <div id="jellyspotMonitoredPlaylists"></div>
                     <button is="emby-button" type="button" class="raised button-submit" id="jellyspotSaveSettingsBtn"><span>Save sync settings</span></button>
-                    <div id="jellyspotSyncMeta" class="fieldDescription" style="margin-top:.75em;"></div>
-                </div>
+                </article>
             </div>
 
-            <!-- Browse -->
-            <div class="jellyspot-panel hide" data-panel="browse">
-                <p>Search Spotify or open your playlists, then queue downloads. Link Spotify under Sync first.</p>
-                <div style="display:flex;gap:.5em;flex-wrap:wrap;margin:1em 0;align-items:flex-end;">
-                    <div class="inputContainer" style="flex:1;min-width:220px;margin:0;">
-                        <input is="emby-input" type="text" id="jellyspotSearchInput" label="Search Spotify" />
+            <div class="jellyspot-panel jsp-panel" data-panel="browse">
+                <article class="jsp-card">
+                    <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">search</span>Catalog</h3>
+                    <p class="jsp-card-copy">Users should use Home → Browse to open playlists and pick tracks. This is a quick admin lookup.</p>
+                    <div class="jsp-actions">
+                        <div class="inputContainer" style="flex:1;min-width:220px;margin:0;">
+                            <input is="emby-input" type="text" id="jellyspotSearchInput" label="Search Spotify" />
+                        </div>
+                        <button is="emby-button" type="button" class="raised button-submit" id="jellyspotSearchBtn"><span>Search</span></button>
+                        <button is="emby-button" type="button" class="raised" id="jellyspotLoadPlaylistsBtn"><span>Playlists</span></button>
+                        <button is="emby-button" type="button" class="raised" id="jellyspotLikedBtn"><span>Liked songs</span></button>
                     </div>
-                    <button is="emby-button" type="button" class="raised button-submit" id="jellyspotSearchBtn"><span>Search</span></button>
-                    <button is="emby-button" type="button" class="raised" id="jellyspotLoadPlaylistsBtn"><span>My Playlists</span></button>
-                    <button is="emby-button" type="button" class="raised" id="jellyspotLikedBtn"><span>Liked Songs</span></button>
-                </div>
-                <div id="jellyspotBrowseStatus" class="fieldDescription"></div>
-                <div id="jellyspotBrowseResults" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.85em;margin-top:1em;"></div>
+                    <div id="jellyspotBrowseStatus" class="fieldDescription" style="margin-top:.75em;"></div>
+                    <div id="jellyspotBrowseResults" class="jsp-browse-results"></div>
+                </article>
             </div>
 
-            <!-- Queue -->
-            <div class="jellyspot-panel hide" data-panel="queue">
-                <p>Download progress, match scores, and rematch actions.</p>
-                <div style="display:flex;gap:.5em;flex-wrap:wrap;margin:1em 0;align-items:center;">
-                    <div class="selectContainer" style="margin:0;">
-                        <label class="selectLabel" for="jellyspotQueueFilter">Status</label>
-                        <select is="emby-select" id="jellyspotQueueFilter" class="emby-select-withcolor">
-                            <option value="">All</option>
-                            <option value="Pending">Pending</option>
-                            <option value="Matching">Matching</option>
-                            <option value="Downloading">Downloading</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Failed">Failed</option>
-                        </select>
+            <div class="jellyspot-panel jsp-panel" data-panel="queue">
+                <article class="jsp-card">
+                    <h3 class="jsp-card-title"><span class="material-icons" aria-hidden="true">pending_actions</span>Download queue</h3>
+                    <p class="jsp-card-copy">Retry failed jobs without rematching unless the video is wrong.</p>
+                    <div class="jsp-actions">
+                        <div class="selectContainer" style="margin:0;min-width:160px;">
+                            <label class="selectLabel" for="jellyspotQueueFilter">Status</label>
+                            <select is="emby-select" id="jellyspotQueueFilter" class="emby-select-withcolor">
+                                <option value="">All</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Matching">Matching</option>
+                                <option value="Downloading">Downloading</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Failed">Failed</option>
+                            </select>
+                        </div>
+                        <button is="emby-button" type="button" class="raised" id="jellyspotQueueRefresh"><span>Refresh</span></button>
+                        <button is="emby-button" type="button" class="raised button-submit" id="jellyspotQueueRetryFailed"><span>Retry failed</span></button>
                     </div>
-                    <button is="emby-button" type="button" class="raised" id="jellyspotQueueRefresh"><span>Refresh</span></button>
-                    <button is="emby-button" type="button" class="raised button-submit" id="jellyspotQueueRetryFailed"><span>Retry failed</span></button>
-                </div>
-                <table class="detailTable" style="width:100%;">
-                    <thead>
-                        <tr>
-                            <th>Track</th>
-                            <th>Status</th>
-                            <th>Score</th>
-                            <th>Details</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody id="jellyspotQueueBody"></tbody>
-                </table>
+                    <table class="jsp-queue-table">
+                        <thead>
+                            <tr>
+                                <th>Track</th>
+                                <th>Status</th>
+                                <th>Score</th>
+                                <th>Details</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="jellyspotQueueBody"></tbody>
+                    </table>
+                </article>
             </div>
         </div>
     </div>
@@ -220,11 +251,11 @@
 
             function showTab(name) {
                 page.querySelectorAll('.jellyspot-panel').forEach(function (el) {
+                    el.classList.toggle('is-active', el.getAttribute('data-panel') === name);
                     el.classList.toggle('hide', el.getAttribute('data-panel') !== name);
                 });
                 page.querySelectorAll('.jellyspot-tab').forEach(function (btn) {
-                    var active = btn.getAttribute('data-tab') === name;
-                    btn.classList.toggle('button-submit', active);
+                    btn.classList.toggle('is-active', btn.getAttribute('data-tab') === name);
                 });
                 if (name === 'sync') loadSync();
                 if (name === 'queue') loadQueue();
@@ -612,6 +643,17 @@
                 if (current) sel.value = current;
             }
 
+            function chip(ok, label) {
+                return '<span class="jsp-chip ' + (ok ? 'is-ok' : 'is-bad') + '">' + label + '</span>';
+            }
+
+            function statusCard(ok, icon, title, detail) {
+                return '<div class="jsp-status-card ' + (ok ? 'is-ok' : 'is-bad') + '">' +
+                    '<span class="material-icons" aria-hidden="true">' + icon + '</span>' +
+                    '<div><div class="jsp-status-label">' + title + '</div>' +
+                    '<div class="jsp-status-detail">' + (detail || '') + '</div></div></div>';
+            }
+
             function refreshDetectStatus() {
                 var el = page.querySelector('#jellyspotDetectStatus');
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/admin/health'), dataType: 'json' })
@@ -630,13 +672,25 @@
                                 ? ('Detected from ' + (ffSrc || 'Jellyfin') + ': ' + ffPath + (ffVer ? ' (v' + ffVer + ')' : '') + '. Override only if you need a different binary.')
                                 : 'Jellyfin has not reported FFmpeg yet. Leave empty to use PATH, or set an override.';
                         }
-                        if (!el) return;
-                        el.textContent =
-                            (ffOk ? 'FFmpeg ready' : 'FFmpeg not detected') +
-                            (ffVer ? ' v' + ffVer : '') + ' · ' + ffPath +
-                            ' — Storage ' + (writable ? 'writable' : (storage ? 'not writable yet' : 'not set')) +
-                            (storage ? ' (' + storage + ')' : '') +
-                            ' — File Transformation ' + (ft ? 'installed' : 'missing');
+                        var chips = page.querySelector('#jellyspotStatusChips');
+                        if (chips) {
+                            chips.innerHTML =
+                                chip(ffOk, 'FFmpeg' + (ffVer ? ' v' + ffVer : '')) +
+                                chip(writable, writable ? 'Storage ready' : 'Storage') +
+                                chip(ft, 'File Transformation');
+                        }
+                        var grid = page.querySelector('#jellyspotStatusGrid');
+                        if (grid) {
+                            grid.innerHTML =
+                                statusCard(ffOk, 'memory', 'FFmpeg', ffOk ? ((ffSrc || 'Jellyfin') + ' · ' + ffPath) : 'Not detected') +
+                                statusCard(writable, 'folder', 'Storage', storage || 'No folder selected') +
+                                statusCard(ft, 'extension', 'File Transformation', ft ? 'Home tabs can inject' : 'Install to show Home tabs');
+                        }
+                        if (el) {
+                            el.textContent =
+                                (ffOk ? 'FFmpeg ready' : 'FFmpeg not detected') +
+                                (ffVer ? ' v' + ffVer : '') + ' · ' + ffPath;
+                        }
                     })
                     .catch(function () {
                         if (el) el.textContent = 'Could not detect FFmpeg / libraries.';
@@ -653,6 +707,12 @@
             }
 
             page.addEventListener('pageshow', function () {
+                var bg = getComputedStyle(document.body).backgroundColor || '';
+                var rgb = bg.match(/\d+/g) || [];
+                var brightness = rgb.length >= 3
+                    ? (Number(rgb[0]) * 299 + Number(rgb[1]) * 587 + Number(rgb[2]) * 114) / 1000
+                    : 40;
+                page.classList.toggle('jsp-light', brightness > 160);
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                     loadConfig(config);
