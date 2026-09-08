@@ -39,6 +39,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         _watchersReady: false,
         _pendingInner: null,
+        _browseBack: null,
         _handlersBound: false,
         _tabsEnsuring: false,
         _tabsEnsureQueued: false,
@@ -918,26 +919,25 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 const who = self.escapeHtml(self.linkedName(me));
                 root.innerHTML =
                     '<div class="jellyspot-app">' +
-                    '<div class="jellyspot-hero"><div>' +
-                    '<div class="jellyspot-kicker">Spotify</div>' +
-                    '<h2 class="sectionTitle jellyspot-title">Spotify Browse</h2>' +
-                    '<p class="jellyspot-lede">Signed in as ' + who + '. Library, liked songs, sync, and the download queue live here.</p>' +
-                    '</div></div>' +
+                    '<div class="jellyspot-toast-host" aria-live="polite"></div>' +
+                    '<header class="jellyspot-topbar">' +
+                    '<div class="jellyspot-brand">Spotify</div>' +
+                    '<div class="jellyspot-search">' +
+                    '<input type="search" class="jellyspot-search-input" placeholder="Search songs, albums, playlists, artists" />' +
+                    '</div>' +
+                    '<div class="jellyspot-hero-who">' + who + '</div>' +
+                    '</header>' +
                     '<div class="jellyspot-identity" hidden></div>' +
-                    '<div class="jellyspot-libnav" role="tablist">' +
-                    '<button type="button" class="jellyspot-libnav-btn is-active" data-lib="home">Overview</button>' +
+                    '<nav class="jellyspot-libnav" role="tablist">' +
+                    '<button type="button" class="jellyspot-libnav-btn is-active" data-lib="home">Home</button>' +
                     '<button type="button" class="jellyspot-libnav-btn" data-lib="playlists">Playlists</button>' +
                     '<button type="button" class="jellyspot-libnav-btn" data-lib="albums">Albums</button>' +
                     '<button type="button" class="jellyspot-libnav-btn" data-lib="artists">Artists</button>' +
                     '<button type="button" class="jellyspot-libnav-btn" data-lib="liked">Liked</button>' +
                     '<button type="button" class="jellyspot-libnav-btn" data-lib="sync">Sync</button>' +
                     '<button type="button" class="jellyspot-libnav-btn" data-lib="queue">Queue</button>' +
-                    '</div>' +
+                    '</nav>' +
                     '<div class="jellyspot-library-chrome">' +
-                    '<div class="jellyspot-toolbar jellyspot-toolbar-primary">' +
-                    '<div class="jellyspot-search"><input type="search" class="jellyspot-search-input" placeholder="Search tracks, albums, playlists, artists" /></div>' +
-                    '<button is="emby-button" type="button" class="raised button-submit jellyspot-search-btn"><span>Search</span></button>' +
-                    '</div>' +
                     '<div class="jellyspot-status jellyspot-browse-status">Loading your library…</div>' +
                     '<div class="jellyspot-stage jellyspot-browse-results"></div>' +
                     '</div>' +
@@ -945,14 +945,24 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     '<div class="jellyspot-pane hide" data-pane="queue"></div>' +
                     '</div>';
 
-                root.querySelector('.jellyspot-search-btn').addEventListener('click', function () {
-                    self.searchBrowse(root);
-                });
-                root.querySelector('.jellyspot-search-input').addEventListener('keydown', function (e) {
+                let searchTimer = null;
+                const searchInput = root.querySelector('.jellyspot-search-input');
+                searchInput.addEventListener('keydown', function (e) {
                     if (e.key === 'Enter') {
                         e.preventDefault();
                         self.searchBrowse(root);
                     }
+                });
+                searchInput.addEventListener('input', function () {
+                    clearTimeout(searchTimer);
+                    const q = (searchInput.value || '').trim();
+                    if (!q) {
+                        self.showLibrarySection(root, 'home');
+                        return;
+                    }
+                    searchTimer = setTimeout(function () {
+                        self.searchBrowse(root);
+                    }, 350);
                 });
                 root.querySelectorAll('.jellyspot-libnav-btn').forEach(function (btn) {
                     btn.addEventListener('click', function () {
@@ -970,6 +980,44 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             if (el) {
                 el.textContent = msg || '';
             }
+        },
+
+        notify: function (root, msg, kind) {
+            this.setBrowseStatus(root, msg);
+            const host = root.querySelector('.jellyspot-toast-host');
+            if (!host) {
+                return;
+            }
+            host.innerHTML = '';
+            const toast = document.createElement('div');
+            toast.className = 'jellyspot-toast is-' + (kind || 'info');
+            toast.textContent = msg;
+            host.appendChild(toast);
+            setTimeout(function () {
+                toast.classList.add('is-leaving');
+                setTimeout(function () {
+                    toast.remove();
+                }, 220);
+            }, 4200);
+        },
+
+        showStageMessage: function (root, title, detail) {
+            const stage = root.querySelector('.jellyspot-browse-results');
+            if (!stage) {
+                return;
+            }
+            stage.innerHTML = '<div class="jellyspot-empty"><strong>' + this.escapeHtml(title) + '</strong>' +
+                (detail ? '<p>' + this.escapeHtml(detail) + '</p>' : '') + '</div>';
+        },
+
+        goBrowseBack: function (root) {
+            const back = this._browseBack;
+            this._browseBack = null;
+            if (typeof back === 'function') {
+                back();
+                return;
+            }
+            this.showLibrarySection(root, 'home');
         },
 
         coverOf: function (item) {
@@ -1002,26 +1050,30 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             const card = document.createElement('article');
             card.className = 'jellyspot-card' + (spec.open ? ' is-openable' : '') + (spec.avatar ? ' is-artist' : '');
+            if (spec.trackId) {
+                card.dataset.trackId = spec.trackId;
+            }
             card.innerHTML =
-                '<span class="jellyspot-card-kind">' + this.escapeHtml(spec.kindLabel) + '</span>' +
+                '<div class="jellyspot-card-art">' +
                 (spec.image
                     ? '<img src="' + this.escapeHtml(spec.image) + '" alt="" />'
                     : '<div class="jellyspot-card-fallback"></div>') +
+                '<span class="jellyspot-card-kind">' + this.escapeHtml(spec.kindLabel) + '</span>' +
+                '<div class="jellyspot-card-overlay"></div>' +
+                '</div>' +
                 '<strong>' + this.escapeHtml(spec.title) + '</strong>' +
-                '<div class="fieldDescription">' + this.escapeHtml(spec.meta || '') + '</div>' +
-                '<div class="jellyspot-card-actions"></div>';
-            const actions = card.querySelector('.jellyspot-card-actions');
+                '<div class="fieldDescription">' + this.escapeHtml(spec.meta || '') + '</div>';
+            const overlay = card.querySelector('.jellyspot-card-overlay');
             if (spec.open) {
                 const open = document.createElement('button');
-                open.setAttribute('is', 'emby-button');
                 open.type = 'button';
-                open.className = 'raised button-submit';
-                open.innerHTML = '<span>Open</span>';
+                open.className = 'jellyspot-card-btn is-primary';
+                open.textContent = spec.openLabel || 'Open';
                 open.addEventListener('click', function (e) {
                     e.stopPropagation();
                     spec.open();
                 });
-                actions.appendChild(open);
+                overlay.appendChild(open);
                 card.addEventListener('click', function (e) {
                     if (e.target.closest('button')) {
                         return;
@@ -1031,21 +1083,21 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
             if (spec.queue) {
                 const queue = document.createElement('button');
-                queue.setAttribute('is', 'emby-button');
                 queue.type = 'button';
-                queue.className = 'raised';
-                queue.innerHTML = '<span>' + (spec.open ? 'Queue all' : 'Queue') + '</span>';
+                queue.className = 'jellyspot-card-btn jellyspot-card-queue';
+                queue.textContent = spec.open ? 'Queue all' : 'Queue';
                 queue.addEventListener('click', function (e) {
                     e.stopPropagation();
                     spec.queue();
                 });
-                actions.appendChild(queue);
+                overlay.appendChild(queue);
             }
             grid.appendChild(card);
         },
 
         queueItem: function (kind, id, name, root) {
             const self = this;
+            this.notify(root, 'Queuing ' + name + '…', 'info');
             let req;
             if (kind === 'track') {
                 req = ApiClient.ajax({
@@ -1075,9 +1127,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
 
             req.then(function (res) {
-                self.setBrowseStatus(root, self.formatQueueMessage(res, 'Queued ' + name));
+                self.notify(root, self.formatQueueMessage(res, 'Queued ' + name), 'ok');
             }).catch(function () {
-                self.setBrowseStatus(root, 'Queue failed — link Spotify under Sync first.');
+                self.notify(root, 'Queue failed. Check Sync, then try again.', 'error');
             });
         },
 
@@ -1228,7 +1280,11 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         openPlaylist: function (root, id, fallbackName) {
             const self = this;
-            this.setBrowseStatus(root, 'Opening playlist…');
+            const stage = root.querySelector('.jellyspot-browse-results');
+            if (stage) {
+                stage.innerHTML = '<div class="jellyspot-empty">Opening playlist…</div>';
+            }
+            this.notify(root, 'Opening playlist…', 'info');
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists/' + encodeURIComponent(id)), dataType: 'json' })
                 .then(function (data) {
                     data = self.coercePayload(data) || {};
@@ -1248,7 +1304,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                                 type: 'POST',
                                 url: ApiClient.getUrl('JellySpot/Playlists/' + encodeURIComponent(id) + '/Monitor')
                             }).then(function () {
-                                self.setBrowseStatus(root, 'Monitoring ' + name + ' on sync');
+                                self.notify(root, 'Monitoring ' + name + ' on sync', 'ok');
                             });
                         },
                         playlistId: id,
@@ -1256,7 +1312,10 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     });
                 })
                 .catch(function () {
-                    self.setBrowseStatus(root, 'Could not open that playlist.');
+                    if (stage) {
+                        stage.innerHTML = '<div class="jellyspot-empty">Could not open that playlist. Spotify blocked the track list, or the request failed.</div>';
+                    }
+                    self.notify(root, 'Could not open that playlist.', 'error');
                 });
         },
 
@@ -1286,6 +1345,29 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 });
         },
 
+        queueTrackIds: function (root, ids, playlistId, playlistName) {
+            const self = this;
+            if (!ids.length) {
+                this.notify(root, 'Nothing to queue.', 'ok');
+                return;
+            }
+            this.notify(root, 'Queuing ' + ids.length + ' tracks…', 'info');
+            ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl('JellySpot/Queue/Tracks'),
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    TrackIds: ids,
+                    PlaylistId: playlistId,
+                    PlaylistName: playlistName
+                })
+            }).then(function (res) {
+                self.notify(root, self.formatQueueMessage(res, 'Queued tracks'), 'ok');
+            }).catch(function () {
+                self.notify(root, 'Queue failed. Check Sync, then try again.', 'error');
+            });
+        },
+
         renderTrackPicker: function (root, spec) {
             const self = this;
             const stage = root.querySelector('.jellyspot-browse-results') || root.querySelector('.jellyspot-liked-results');
@@ -1295,12 +1377,13 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
             const tracks = this.coerceTracks(spec.tracks);
             if (!tracks.length) {
-                stage.innerHTML = '<div class="jellyspot-empty">No readable tracks came back from Spotify.</div>';
-                this.setBrowseStatus(root, '0 tracks loaded');
+                this.showStageMessage(root, 'No playable tracks', 'Spotify returned this ' + (spec.kind || 'item') + ' but none of the tracks were readable.');
+                this.notify(root, '0 tracks loaded', 'error');
                 return;
             }
             stage.innerHTML =
                 '<div class="jellyspot-detail">' +
+                '<button type="button" class="jellyspot-text-back jellyspot-back-btn">← Back</button>' +
                 '<div class="jellyspot-detail-head">' +
                 (spec.image
                     ? '<img class="jellyspot-detail-cover" src="' + this.escapeHtml(spec.image) + '" alt="" />'
@@ -1308,20 +1391,23 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 '<div class="jellyspot-detail-meta">' +
                 '<div class="jellyspot-kicker">' + this.escapeHtml(spec.kind) + '</div>' +
                 '<h3>' + this.escapeHtml(spec.title) + '</h3>' +
-                '<p class="jellyspot-lede">' + this.escapeHtml(spec.subtitle || '') + '</p>' +
-                '</div></div>' +
+                '<p class="jellyspot-lede">' + this.escapeHtml(spec.subtitle || tracks.length + ' tracks') + '</p>' +
+                '<div class="jellyspot-hero-actions">' +
+                '<button type="button" class="jellyspot-card-btn is-primary jellyspot-queue-missing">Queue missing</button>' +
+                '<button type="button" class="jellyspot-card-btn jellyspot-queue-all">Queue all</button>' +
+                (spec.monitor ? '<button type="button" class="jellyspot-card-btn jellyspot-monitor-btn">Monitor on sync</button>' : '') +
+                '</div></div></div>' +
                 '<div class="jellyspot-actionbar">' +
-                (spec.kind !== 'liked' ? '<button is="emby-button" type="button" class="raised jellyspot-back-btn"><span>Back</span></button>' : '') +
-                '<button is="emby-button" type="button" class="raised jellyspot-select-all"><span>Select all</span></button>' +
-                '<button is="emby-button" type="button" class="raised jellyspot-select-none"><span>Select none</span></button>' +
                 '<input type="search" class="jellyspot-track-filter" placeholder="Filter tracks" />' +
-                '<button is="emby-button" type="button" class="raised button-submit jellyspot-queue-selected"><span>Queue selected</span></button>' +
-                '<button is="emby-button" type="button" class="raised jellyspot-queue-all"><span>Queue all</span></button>' +
-                (spec.monitor ? '<button is="emby-button" type="button" class="raised jellyspot-monitor-btn"><span>Monitor</span></button>' : '') +
+                '<button type="button" class="jellyspot-text-btn jellyspot-select-all">Select all</button>' +
+                '<button type="button" class="jellyspot-text-btn jellyspot-select-none">Select none</button>' +
+                '<button type="button" class="jellyspot-card-btn is-primary jellyspot-queue-selected">Queue selected</button>' +
                 '<span class="jellyspot-count"></span>' +
                 '</div>' +
                 '<table class="jellyspot-track-table"><thead><tr>' +
-                '<th></th><th>Title</th><th class="jellyspot-col-album">Album</th><th class="jellyspot-col-duration">Time</th><th>Status</th>' +
+                '<th class="jellyspot-col-check"></th><th class="jellyspot-col-num">#</th><th>Title</th>' +
+                '<th class="jellyspot-col-album">Album</th><th class="jellyspot-col-duration">Time</th>' +
+                '<th>Status</th><th></th>' +
                 '</tr></thead><tbody></tbody></table>' +
                 '</div>';
 
@@ -1331,27 +1417,40 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 const title = self.pick(track, 'Name', 'name') || 'Untitled';
                 const artists = self.artistsOf(track);
                 const album = self.pick(track, 'Album', 'album') || '';
+                const albumId = self.pick(track, 'AlbumId', 'albumId');
                 const duration = self.pick(track, 'DurationMs', 'durationMs', 'duration_ms') || 0;
                 const image = self.coverOf(track);
                 const tr = document.createElement('tr');
                 tr.dataset.trackId = id;
                 tr.dataset.search = (title + ' ' + artists + ' ' + album).toLowerCase();
                 tr.innerHTML =
-                    '<td><input type="checkbox" class="jellyspot-track-check" checked /></td>' +
+                    '<td class="jellyspot-col-check"><input type="checkbox" class="jellyspot-track-check" checked /></td>' +
+                    '<td class="jellyspot-col-num jellyspot-muted">' + (index + 1) + '</td>' +
                     '<td><div class="jellyspot-track-main">' +
                     (image ? '<img src="' + self.escapeHtml(image) + '" alt="" />' : '<div class="jellyspot-track-fallback"></div>') +
                     '<div><div class="jellyspot-track-title">' + self.escapeHtml(title) + '</div>' +
                     '<div class="jellyspot-muted">' + self.escapeHtml(artists) + '</div></div></div></td>' +
-                    '<td class="jellyspot-col-album jellyspot-muted">' + self.escapeHtml(album) + '</td>' +
+                    '<td class="jellyspot-col-album">' +
+                    (albumId
+                        ? '<button type="button" class="jellyspot-link" data-album-id="' + self.escapeHtml(albumId) + '">' + self.escapeHtml(album) + '</button>'
+                        : '<span class="jellyspot-muted">' + self.escapeHtml(album) + '</span>') +
+                    '</td>' +
                     '<td class="jellyspot-col-duration jellyspot-muted">' + self.escapeHtml(self.formatDuration(duration)) + '</td>' +
-                    '<td><span class="jellyspot-pill">Ready</span></td>';
-                tr.addEventListener('click', function (e) {
-                    if (e.target.closest('input, button')) {
-                        return;
-                    }
-                    const box = tr.querySelector('.jellyspot-track-check');
-                    box.checked = !box.checked;
-                    self.syncTrackSelection(stage);
+                    '<td><span class="jellyspot-pill">Ready</span></td>' +
+                    '<td><button type="button" class="jellyspot-row-queue">Queue</button></td>';
+                const albumBtn = tr.querySelector('[data-album-id]');
+                if (albumBtn) {
+                    albumBtn.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        self._browseBack = function () {
+                            self.renderTrackPicker(root, spec);
+                        };
+                        self.openAlbum(root, albumBtn.getAttribute('data-album-id'), album);
+                    });
+                }
+                tr.querySelector('.jellyspot-row-queue').addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    self.queueItem('track', id, title, root);
                 });
                 tr.querySelector('.jellyspot-track-check').addEventListener('change', function () {
                     self.syncTrackSelection(stage);
@@ -1359,12 +1458,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 tbody.appendChild(tr);
             });
 
-            const back = stage.querySelector('.jellyspot-back-btn');
-            if (back) {
-                back.addEventListener('click', function () {
-                    self.loadLibraryHome(root);
-                });
-            }
+            stage.querySelector('.jellyspot-back-btn').addEventListener('click', function () {
+                self.goBrowseBack(root);
+            });
             stage.querySelector('.jellyspot-select-all').addEventListener('click', function () {
                 self.setVisibleTrackChecks(stage, true);
             });
@@ -1375,28 +1471,20 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 self.filterTrackRows(stage, e.target.value);
             });
             stage.querySelector('.jellyspot-queue-selected').addEventListener('click', function () {
-                const ids = self.selectedTrackIds(stage);
-                if (!ids.length) {
-                    self.setBrowseStatus(root, 'Select at least one track.');
-                    return;
-                }
-                ApiClient.ajax({
-                    type: 'POST',
-                    url: ApiClient.getUrl('JellySpot/Queue/Tracks'),
-                    contentType: 'application/json',
-                    data: JSON.stringify({
-                        TrackIds: ids,
-                        PlaylistId: spec.playlistId || spec.kind,
-                        PlaylistName: spec.playlistName || spec.title
-                    })
-                }).then(function (res) {
-                    self.setBrowseStatus(root, self.formatQueueMessage(res, 'Queued selected tracks'));
-                }).catch(function () {
-                    self.setBrowseStatus(root, 'Queue failed — link Spotify under Sync first.');
-                });
+                self.queueTrackIds(root, self.selectedTrackIds(stage), spec.playlistId || spec.kind, spec.playlistName || spec.title);
             });
             stage.querySelector('.jellyspot-queue-all').addEventListener('click', function () {
                 spec.queueAll();
+            });
+            stage.querySelector('.jellyspot-queue-missing').addEventListener('click', function () {
+                const ids = Array.prototype.map.call(stage.querySelectorAll('tr[data-track-id]:not(.is-owned)'), function (row) {
+                    return row.classList.contains('is-hidden') ? null : row.dataset.trackId;
+                }).filter(Boolean);
+                if (!ids.length) {
+                    self.notify(root, 'Everything here is already in your library.', 'ok');
+                    return;
+                }
+                self.queueTrackIds(root, ids, spec.playlistId || spec.kind, spec.playlistName || spec.title);
             });
             const monitor = stage.querySelector('.jellyspot-monitor-btn');
             if (monitor && spec.monitor) {
@@ -1404,7 +1492,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
 
             this.syncTrackSelection(stage);
-            this.setBrowseStatus(root, tracks.length + ' tracks — deselect anything you do not want');
+            this.setBrowseStatus(root, tracks.length + ' tracks');
             this.markOwnedTracks(stage);
         },
 
@@ -1454,19 +1542,16 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
         },
 
-        markOwnedTracks: function (stage) {
-            const ids = Array.prototype.map.call(stage.querySelectorAll('tr[data-track-id]'), function (row) {
-                return row.dataset.trackId;
-            }).filter(Boolean);
-            if (!ids.length) {
+        lookupOwnedIds: function (ids, onDone) {
+            const list = (ids || []).filter(Boolean);
+            if (!list.length) {
+                onDone({});
                 return;
             }
-
             const chunks = [];
-            for (let i = 0; i < ids.length; i += 80) {
-                chunks.push(ids.slice(i, i + 80));
+            for (let i = 0; i < list.length; i += 80) {
+                chunks.push(list.slice(i, i + 80));
             }
-
             Promise.all(chunks.map(function (chunk) {
                 return ApiClient.ajax({
                     type: 'GET',
@@ -1480,7 +1565,45 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         owned[key] = map[key];
                     });
                 });
-                stage.querySelectorAll('tr[data-track-id]').forEach(function (row) {
+                onDone(owned);
+            }).catch(function () {
+                onDone({});
+            });
+        },
+
+        markOwnedCards: function (root) {
+            const cards = root.querySelectorAll('.jellyspot-card[data-track-id]');
+            const ids = Array.prototype.map.call(cards, function (card) {
+                return card.dataset.trackId;
+            });
+            this.lookupOwnedIds(ids, function (owned) {
+                cards.forEach(function (card) {
+                    if (!owned[card.dataset.trackId]) {
+                        return;
+                    }
+                    card.classList.add('is-owned');
+                    const queue = card.querySelector('.jellyspot-card-queue');
+                    if (queue) {
+                        queue.remove();
+                    }
+                    const art = card.querySelector('.jellyspot-card-art');
+                    if (art && !art.querySelector('.jellyspot-owned-badge')) {
+                        const badge = document.createElement('span');
+                        badge.className = 'jellyspot-owned-badge';
+                        badge.textContent = 'In library';
+                        art.appendChild(badge);
+                    }
+                });
+            });
+        },
+
+        markOwnedTracks: function (stage) {
+            const rows = stage.querySelectorAll('tr[data-track-id]');
+            const ids = Array.prototype.map.call(rows, function (row) {
+                return row.dataset.trackId;
+            });
+            this.lookupOwnedIds(ids, function (owned) {
+                rows.forEach(function (row) {
                     const pill = row.querySelector('.jellyspot-pill');
                     if (!pill) {
                         return;
@@ -1488,9 +1611,13 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     const isOwned = !!owned[row.dataset.trackId];
                     pill.textContent = isOwned ? 'In library' : 'Ready';
                     pill.classList.toggle('is-owned', isOwned);
+                    row.classList.toggle('is-owned', isOwned);
+                    const rowQueue = row.querySelector('.jellyspot-row-queue');
+                    if (rowQueue) {
+                        rowQueue.textContent = isOwned ? 'Saved' : 'Queue';
+                        rowQueue.disabled = isOwned;
+                    }
                 });
-            }).catch(function () {
-                // ownership badges are optional
             });
         },
 
@@ -1527,7 +1654,12 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         },
 
         showLibrarySection: function (root, section) {
+            const self = this;
             const id = section || 'home';
+            this._currentLib = id;
+            this._browseBack = function () {
+                self.showLibrarySection(root, id === 'liked' ? 'home' : id);
+            };
             this.setLibraryNav(root, id);
             this.showLibraryChrome(root, id);
             if (id === 'sync') {
@@ -1620,6 +1752,23 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     const artists = self.pick(data, 'Artists', 'artists') || [];
                     const liked = self.pick(data, 'LikedPreview', 'likedPreview') || [];
                     const likedCount = self.pick(data, 'LikedCount', 'likedCount') || liked.length;
+                    const likedCover = liked[0] ? self.coverOf(liked[0]) : '';
+
+                    const featured = document.createElement('button');
+                    featured.type = 'button';
+                    featured.className = 'jellyspot-featured';
+                    featured.innerHTML =
+                        (likedCover ? '<img src="' + self.escapeHtml(likedCover) + '" alt="" />' : '<div class="jellyspot-card-fallback"></div>') +
+                        '<div class="jellyspot-featured-copy">' +
+                        '<div class="jellyspot-kicker">Playlist</div>' +
+                        '<h3>Liked Songs</h3>' +
+                        '<p>' + likedCount + ' liked tracks on this account</p>' +
+                        '<span class="jellyspot-card-btn is-primary">Open</span>' +
+                        '</div>';
+                    featured.addEventListener('click', function () {
+                        self.showLibrarySection(root, 'liked');
+                    });
+                    stage.appendChild(featured);
 
                     self.addShelf(stage, 'Liked songs', likedCount, function () {
                         self.showLibrarySection(root, 'liked');
@@ -1632,6 +1781,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                                 title: name,
                                 meta: self.artistsOf(track),
                                 image: self.coverOf(track),
+                                trackId: id,
                                 queue: function () { self.queueItem('track', id, name, root); }
                             });
                         });
@@ -1689,7 +1839,8 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         });
                     });
 
-                    self.setBrowseStatus(root, 'Your library — open anything, or search across Spotify');
+                    self.setBrowseStatus(root, 'Your library — open a playlist or album to pick tracks');
+                    self.markOwnedCards(stage);
                 })
                 .catch(function () {
                     self.setBrowseStatus(root, 'Could not load your library.');
@@ -1773,18 +1924,21 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         openArtist: function (root, id, fallbackName) {
             const self = this;
-            this.setBrowseStatus(root, 'Opening artist…');
+            this.showStageMessage(root, 'Opening artist…');
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Artists/' + encodeURIComponent(id)), dataType: 'json' })
                 .then(function (data) {
                     data = self.coercePayload(data) || {};
                     const artist = self.pick(data, 'Artist', 'artist') || {};
                     const albums = self.pick(data, 'Albums', 'albums') || [];
+                    const topTracks = self.pick(data, 'TopTracks', 'topTracks') || [];
                     const name = self.pick(artist, 'Name', 'name') || fallbackName || 'Artist';
                     const genres = self.pick(artist, 'Genres', 'genres') || [];
                     const genreText = Array.isArray(genres) ? genres.slice(0, 4).join(' · ') : '';
+                    const followers = self.pick(artist, 'Followers', 'followers') || 0;
                     const stage = root.querySelector('.jellyspot-browse-results');
                     stage.innerHTML =
                         '<div class="jellyspot-detail">' +
+                        '<button type="button" class="jellyspot-text-back jellyspot-back-btn">← Back</button>' +
                         '<div class="jellyspot-detail-head is-artist">' +
                         (self.coverOf(artist)
                             ? '<img class="jellyspot-detail-cover is-round" src="' + self.escapeHtml(self.coverOf(artist)) + '" alt="" />'
@@ -1792,9 +1946,28 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         '<div class="jellyspot-detail-meta">' +
                         '<div class="jellyspot-kicker">artist</div>' +
                         '<h3>' + self.escapeHtml(name) + '</h3>' +
-                        '<p class="jellyspot-lede">' + self.escapeHtml(genreText) + '</p>' +
-                        '<button is="emby-button" type="button" class="raised jellyspot-back-btn"><span>Back</span></button>' +
+                        '<p class="jellyspot-lede">' + self.escapeHtml(genreText || (followers ? followers.toLocaleString() + ' followers' : 'Artist')) + '</p>' +
                         '</div></div></div>';
+                    if (topTracks.length) {
+                        self.addShelf(stage, 'Popular', topTracks.length, null, function (row) {
+                            topTracks.slice(0, 10).forEach(function (track) {
+                                const trackId = self.pick(track, 'Id', 'id');
+                                const trackName = self.pick(track, 'Name', 'name') || 'Untitled';
+                                self.addCatalogCard(row, {
+                                    kindLabel: 'track',
+                                    title: trackName,
+                                    meta: self.artistsOf(track),
+                                    image: self.coverOf(track),
+                                    trackId: trackId,
+                                    queue: function () { self.queueItem('track', trackId, trackName, root); }
+                                });
+                            });
+                        });
+                    }
+                    const discog = document.createElement('div');
+                    discog.className = 'jellyspot-section-head';
+                    discog.innerHTML = '<h3>Discography</h3><span class="jellyspot-muted">' + albums.length + '</span>';
+                    stage.appendChild(discog);
                     const grid = document.createElement('div');
                     grid.className = 'jellyspot-grid';
                     albums.forEach(function (album) {
@@ -1805,21 +1978,23 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                             title: albumName,
                             meta: (self.pick(album, 'Year', 'year') || '') + (self.pick(album, 'TrackCount', 'trackCount') ? ' · ' + self.pick(album, 'TrackCount', 'trackCount') + ' tracks' : ''),
                             image: self.coverOf(album),
-                            open: function () { self.openAlbum(root, albumId, albumName); },
+                            open: function () {
+                                self._browseBack = function () { self.openArtist(root, id, name); };
+                                self.openAlbum(root, albumId, albumName);
+                            },
                             queue: function () { self.queueItem('album', albumId, albumName, root); }
                         });
                     });
                     stage.appendChild(grid);
-                    const back = stage.querySelector('.jellyspot-back-btn');
-                    if (back) {
-                        back.addEventListener('click', function () {
-                            self.showLibrarySection(root, 'artists');
-                        });
-                    }
-                    self.setBrowseStatus(root, albums.length + ' releases — open an album to pick tracks');
+                    stage.querySelector('.jellyspot-back-btn').addEventListener('click', function () {
+                        self.goBrowseBack(root);
+                    });
+                    self.markOwnedCards(stage);
+                    self.setBrowseStatus(root, name);
                 })
                 .catch(function () {
-                    self.setBrowseStatus(root, 'Could not open that artist.');
+                    self.showStageMessage(root, 'Could not open that artist', 'The artist page failed to load.');
+                    self.notify(root, 'Could not open that artist.', 'error');
                 });
         },
 

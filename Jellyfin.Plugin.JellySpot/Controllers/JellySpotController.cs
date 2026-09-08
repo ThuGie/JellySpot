@@ -328,7 +328,8 @@ public class JellySpotController : ControllerBase
         }
 
         var albums = await _spotify.GetArtistAlbumsAsync(userId, id, ct).ConfigureAwait(false);
-        return Ok(new { Artist = artist, Albums = albums });
+        var topTracks = await _spotify.GetArtistTopTracksAsync(userId, id, ct).ConfigureAwait(false);
+        return Ok(new { Artist = artist, Albums = albums, TopTracks = topTracks });
     }
 
     [HttpGet("Library/Exists")]
@@ -444,10 +445,11 @@ public class JellySpotController : ControllerBase
         var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
         var queued = 0;
         var skipped = 0;
-        foreach (var trackId in request.TrackIds.Distinct())
+        var ids = request.TrackIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+        var tracks = await _spotify.GetTracksAsync(userId, ids, ct).ConfigureAwait(false);
+        foreach (var trackId in ids)
         {
-            var track = await _spotify.GetTrackAsync(userId, trackId, ct).ConfigureAwait(false);
-            if (track == null)
+            if (!tracks.TryGetValue(trackId, out var track))
             {
                 continue;
             }

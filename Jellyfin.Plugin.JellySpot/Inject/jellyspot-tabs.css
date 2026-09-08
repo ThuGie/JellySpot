@@ -65,7 +65,146 @@
 }
 
 .jellyspot-app {
-    max-width: 1180px;
+    max-width: 1280px;
+    padding: 0 0.25em 3em;
+}
+
+.jellyspot-topbar {
+    display: flex;
+    align-items: center;
+    gap: 1em;
+    margin: 0 0 0.85em;
+}
+
+.jellyspot-brand {
+    font-size: 1.35rem;
+    font-weight: 760;
+    letter-spacing: -0.03em;
+    flex: 0 0 auto;
+}
+
+.jellyspot-topbar .jellyspot-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+}
+
+.jellyspot-featured {
+    display: grid;
+    grid-template-columns: 168px 1fr;
+    gap: 1.2em;
+    width: 100%;
+    margin: 0 0 1.6em;
+    padding: 1em;
+    border: 0;
+    border-radius: 22px;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    background:
+        linear-gradient(135deg, color-mix(in srgb, var(--theme-primary-color, #1db954) 28%, #141414), #101010);
+}
+
+.jellyspot-featured img,
+.jellyspot-featured .jellyspot-card-fallback {
+    width: 168px;
+    height: 168px;
+    border-radius: 14px;
+    object-fit: cover;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+}
+
+.jellyspot-featured-copy h3 {
+    margin: 0.15em 0 0.4em;
+    font-size: 2rem;
+}
+
+.jellyspot-featured-copy p {
+    margin: 0 0 0.9em;
+    color: var(--secondaryTextColor);
+}
+
+.jellyspot-text-back,
+.jellyspot-text-btn,
+.jellyspot-link,
+.jellyspot-row-queue {
+    appearance: none;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    padding: 0;
+}
+
+.jellyspot-text-back {
+    margin: 0 0 0.85em;
+    opacity: 0.75;
+}
+
+.jellyspot-text-btn {
+    opacity: 0.78;
+}
+
+.jellyspot-link {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+}
+
+.jellyspot-row-queue {
+    padding: 0.25em 0.55em;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.jellyspot-row-queue:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.jellyspot-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    margin-top: 0.9em;
+}
+
+.jellyspot-toast-host {
+    position: sticky;
+    top: 4.4em;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45em;
+    pointer-events: none;
+}
+
+.jellyspot-toast {
+    align-self: flex-start;
+    max-width: 36rem;
+    padding: 0.7em 1em;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--theme-primary-color, #00a4dc) 22%, #111);
+    border: 1px solid color-mix(in srgb, var(--theme-primary-color, #00a4dc) 40%, transparent);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+    font-weight: 600;
+}
+
+.jellyspot-toast.is-ok {
+    background: color-mix(in srgb, #3dd68c 18%, #111);
+    border-color: color-mix(in srgb, #3dd68c 45%, transparent);
+}
+
+.jellyspot-toast.is-error {
+    background: color-mix(in srgb, #ff6b6b 18%, #111);
+    border-color: color-mix(in srgb, #ff6b6b 45%, transparent);
+}
+
+.jellyspot-toast.is-leaving {
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 200ms ease, transform 200ms ease;
 }
 
 .jellyspot-hero {
@@ -74,6 +213,14 @@
     justify-content: space-between;
     gap: 1.25em;
     margin: 0 0 1.15em;
+}
+
+.jellyspot-hero-who {
+    padding: 0.35em 0.75em;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.85rem;
 }
 
 .jellyspot-kicker {
@@ -184,6 +331,7 @@
     scroll-snap-align: start;
 }
 
+.jellyspot-card.is-artist .jellyspot-card-art,
 .jellyspot-card.is-artist img,
 .jellyspot-card.is-artist .jellyspot-card-fallback,
 .jellyspot-detail-cover.is-round,
@@ -237,22 +385,27 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 0.45em;
-    padding: 0.7em;
-    border-radius: 14px;
-    background: var(--cardBackground, rgba(255, 255, 255, 0.04));
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    gap: 0.5em;
+    padding: 0;
+    border-radius: 16px;
+    background: transparent;
+    border: 0;
+    transition: transform 160ms ease;
 }
 
 .jellyspot-card:hover {
-    transform: translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.16);
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+    transform: translateY(-3px);
 }
 
 .jellyspot-card.is-openable {
     cursor: pointer;
+}
+
+.jellyspot-card-art {
+    position: relative;
+    overflow: hidden;
+    border-radius: 14px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
 .jellyspot-card img,
@@ -260,7 +413,7 @@
     width: 100%;
     aspect-ratio: 1;
     object-fit: cover;
-    border-radius: 10px;
+    display: block;
 }
 
 .jellyspot-card-fallback {
@@ -269,10 +422,55 @@
         rgba(255, 255, 255, 0.06);
 }
 
+.jellyspot-card-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 0.4em;
+    padding: 0.7em;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent 55%);
+    opacity: 0;
+    transition: opacity 160ms ease;
+}
+
+.jellyspot-card:hover .jellyspot-card-overlay,
+.jellyspot-card:focus-within .jellyspot-card-overlay {
+    opacity: 1;
+}
+
+.jellyspot-card-btn {
+    appearance: none;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.42em 0.75em;
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.jellyspot-card-btn.is-primary {
+    background: var(--theme-primary-color, #00a4dc);
+}
+
+.jellyspot-owned-badge {
+    position: absolute;
+    right: 0.7em;
+    bottom: 0.7em;
+    padding: 0.22em 0.55em;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 650;
+    background: color-mix(in srgb, #3dd68c 28%, #111);
+}
+
 .jellyspot-card-kind {
     position: absolute;
-    top: 1em;
-    left: 1em;
+    top: 0.7em;
+    left: 0.7em;
     padding: 0.15em 0.45em;
     border-radius: 999px;
     font-size: 0.68rem;
@@ -291,16 +489,7 @@
 
 .jellyspot-card .fieldDescription {
     min-height: 1.2em;
-}
-
-.jellyspot-card-actions {
-    display: flex;
-    gap: 0.4em;
-    margin-top: auto;
-}
-
-.jellyspot-card-actions button {
-    flex: 1;
+    margin: 0;
 }
 
 .jellyspot-detail {
@@ -311,20 +500,21 @@
 
 .jellyspot-detail-head {
     display: grid;
-    grid-template-columns: 148px 1fr;
-    gap: 1.15em;
-    padding: 1em;
-    border-radius: 18px;
-    background: color-mix(in srgb, var(--cardBackground, #202020) 92%, transparent);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    grid-template-columns: 196px 1fr;
+    gap: 1.35em;
+    padding: 1.15em;
+    border-radius: 22px;
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--theme-primary-color, #1db954) 16%, #171717), #121212);
 }
 
 .jellyspot-detail-cover,
 .jellyspot-detail-fallback {
-    width: 148px;
-    height: 148px;
+    width: 196px;
+    height: 196px;
     border-radius: 14px;
     object-fit: cover;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.38);
 }
 
 .jellyspot-detail-fallback {
@@ -334,8 +524,10 @@
 }
 
 .jellyspot-detail-meta h3 {
-    margin: 0.15em 0 0.35em;
-    font-size: 1.55rem;
+    margin: 0.1em 0 0.35em;
+    font-size: 2.35rem;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
 }
 
 .jellyspot-actionbar {
@@ -479,9 +671,25 @@
 }
 
 @media (max-width: 720px) {
+    .jellyspot-topbar {
+        flex-wrap: wrap;
+    }
+
+    .jellyspot-featured,
     .jellyspot-detail-head {
         grid-template-columns: 1fr;
     }
+
+    .jellyspot-featured img,
+    .jellyspot-featured .jellyspot-card-fallback,
+    .jellyspot-detail-cover,
+    .jellyspot-detail-fallback {
+        width: 100%;
+        height: auto;
+    }
+
+    .jellyspot-col-num,
+    .jellyspot-col-check,
 
     .jellyspot-col-album,
     .jellyspot-col-duration {

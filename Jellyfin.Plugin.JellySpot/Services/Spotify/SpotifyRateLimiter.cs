@@ -18,68 +18,64 @@ public class SpotifyRateLimiter
     {
         var config = Plugin.Instance?.Configuration;
         var rps = Math.Max(0.2, config?.SpotifyRequestsPerSecond ?? 2.0);
-        var maxConcurrent = Math.Max(1, config?.SpotifyMaxConcurrentRequests ?? 2);
         var windowLimit = Math.Max(1, (int)Math.Ceiling(rps * 30));
 
         while (true)
         {
             ct.ThrowIfCancellationRequested();
+            TimeSpan? delay = null;
             await _gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
                 var now = DateTime.UtcNow;
                 if (now < _pausedUntil)
                 {
-                    var delay = _pausedUntil - now;
-                    _gate.Release();
-                    await Task.Delay(delay, ct).ConfigureAwait(false);
-                    continue;
+                    delay = _pausedUntil - now;
                 }
-
-                while (_window.Count > 0 && (now - _window.Peek()).TotalSeconds > 30)
+                else
                 {
-                    _window.Dequeue();
-                }
-
-                if (_window.Count >= windowLimit)
-                {
-                    var wait = TimeSpan.FromSeconds(30) - (now - _window.Peek()) + TimeSpan.FromMilliseconds(50);
-                    _gate.Release();
-                    await Task.Delay(wait, ct).ConfigureAwait(false);
-                    continue;
-                }
-
-                // Soft concurrency: leave headroom by spacing requests.
-                if (_window.Count > 0)
-                {
-                    var minGap = TimeSpan.FromSeconds(1.0 / rps);
-                    var sinceLast = now - _window.Last();
-                    if (sinceLast < minGap)
+                    while (_window.Count > 0 && (now - _window.Peek()).TotalSeconds > 30)
                     {
-                        var wait = minGap - sinceLast;
-                        _gate.Release();
-                        await Task.Delay(wait, ct).ConfigureAwait(false);
-                        continue;
+                        _window.Dequeue();
+                    }
+
+                    if (_window.Count >= windowLimit)
+                    {
+                        delay = TimeSpan.FromSeconds(30) - (now - _window.Peek()) + TimeSpan.FromMilliseconds(50);
+                    }
+                    else if (_window.Count > 0)
+                    {
+                        var minGap = TimeSpan.FromSeconds(1.0 / rps);
+                        var sinceLast = now - _window.Last();
+                        if (sinceLast < minGap)
+                        {
+                            delay = minGap - sinceLast;
+                        }
+                        else
+                        {
+                            _window.Enqueue(now);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        _window.Enqueue(now);
+                        return;
                     }
                 }
-
-                _window.Enqueue(now);
-                return;
             }
             finally
             {
-                if (_gate.CurrentCount == 0)
-                {
-                    try
-                    {
-                        _gate.Release();
-                    }
-                    catch (SemaphoreFullException)
-                    {
-                        // ignored
-                    }
-                }
+                _gate.Release();
             }
+
+            var wait = delay.GetValueOrDefault();
+            if (wait < TimeSpan.Zero)
+            {
+                wait = TimeSpan.Zero;
+            }
+
+            await Task.Delay(wait, ct).ConfigureAwait(false);
         }
     }
 
