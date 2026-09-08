@@ -88,6 +88,10 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         });
                     }
                     const result = original.apply(this, arguments);
+                    const page = document.getElementById('indexPage');
+                    if (page && tabsSlider) {
+                        self.alignPluginTab(page, tabsSlider);
+                    }
                     setTimeout(function () {
                         self.ensureNativeTabs();
                     }, 50);
@@ -309,6 +313,17 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             return div.innerHTML;
         },
 
+        bindPluginTabClick: function (button, id) {
+            const self = this;
+            if (!button || button.dataset.jellyspotClickBound === 'true') {
+                return;
+            }
+            button.dataset.jellyspotClickBound = 'true';
+            button.addEventListener('click', function () {
+                self.showPluginTab(id);
+            }, true);
+        },
+
         createTabButton: function (id, title) {
             const titleEl = document.createElement('div');
             titleEl.className = 'emby-button-foreground';
@@ -320,7 +335,80 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             button.className = 'emby-tab-button emby-button';
             button.setAttribute('data-jellyspot-tab', id);
             button.appendChild(titleEl);
+            this.bindPluginTabClick(button, id);
             return button;
+        },
+
+        usedTabIndexes: function (page, tabsSlider, exceptButton, exceptPanel) {
+            const used = {};
+            function mark (el) {
+                const n = parseInt(el.getAttribute('data-index'), 10);
+                if (!isNaN(n)) {
+                    used[n] = true;
+                }
+            }
+            if (tabsSlider) {
+                tabsSlider.querySelectorAll('.emby-tab-button').forEach(function (btn) {
+                    if (btn !== exceptButton) {
+                        mark(btn);
+                    }
+                });
+            }
+            if (page) {
+                page.querySelectorAll('.tabContent').forEach(function (panel) {
+                    if (panel !== exceptPanel) {
+                        mark(panel);
+                    }
+                });
+            }
+            return used;
+        },
+
+        nextFreeTabIndex: function (used) {
+            let max = -1;
+            Object.keys(used).forEach(function (key) {
+                const n = parseInt(key, 10);
+                if (!isNaN(n) && n > max) {
+                    max = n;
+                }
+            });
+            return max + 1;
+        },
+
+        alignPluginTab: function (page, tabsSlider) {
+            if (!page || !tabsSlider) {
+                return false;
+            }
+            const button = tabsSlider.querySelector('[data-jellyspot-tab="browse"]');
+            const panel = page.querySelector('.tabContent[data-jellyspot-tab="browse"]');
+            if (!button || !panel) {
+                return false;
+            }
+            this.bindPluginTabClick(button, 'browse');
+            if (button.parentNode === tabsSlider && tabsSlider.lastElementChild !== button) {
+                tabsSlider.appendChild(button);
+            }
+            const tabContents = page.querySelectorAll('.tabContent');
+            if (tabContents[tabContents.length - 1] !== panel) {
+                page.appendChild(panel);
+            }
+            const used = this.usedTabIndexes(page, tabsSlider, button, panel);
+            const current = parseInt(button.getAttribute('data-index'), 10);
+            const index = !isNaN(current) && !used[current] ? current : this.nextFreeTabIndex(used);
+            const value = String(index);
+            if (button.getAttribute('data-index') !== value || panel.getAttribute('data-index') !== value) {
+                button.setAttribute('data-index', value);
+                panel.setAttribute('data-index', value);
+                return true;
+            }
+            panel.setAttribute('data-index', value);
+            return false;
+        },
+
+        selectedHeaderButton: function (tabs, index) {
+            return tabs.querySelector('.emby-tab-button-active') ||
+                tabs.querySelector('.emby-tab-button[data-jellyspot-tab][data-index="' + index + '"]') ||
+                tabs.querySelector('.emby-tab-button[data-index="' + index + '"]');
         },
 
         createTabPanel: function (id) {
@@ -332,17 +420,6 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             sections.className = 'sections ' + this.TAB_DEFS[id].sectionClass;
             panel.appendChild(sections);
             return panel;
-        },
-
-        nextTabIndex: function (tabsSlider) {
-            let max = -1;
-            tabsSlider.querySelectorAll('.emby-tab-button').forEach(function (btn) {
-                const n = parseInt(btn.getAttribute('data-index'), 10);
-                if (!isNaN(n) && n > max) {
-                    max = n;
-                }
-            });
-            return max + 1;
         },
 
         attachPluginTabGuard: function (tabs) {
@@ -364,7 +441,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     return;
                 }
 
-                const selectedButton = tabs.querySelector('.emby-tab-button[data-index="' + index + '"]');
+                const selectedButton = self.selectedHeaderButton(tabs, index);
                 if (selectedButton && selectedButton.getAttribute('data-jellyspot-tab')) {
                     const id = selectedButton.getAttribute('data-jellyspot-tab');
                     setTimeout(function () {
@@ -385,7 +462,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     return;
                 }
 
-                const selectedButton = tabs.querySelector('.emby-tab-button[data-index="' + index + '"]');
+                const selectedButton = self.selectedHeaderButton(tabs, index);
                 if (!selectedButton || !selectedButton.getAttribute('data-jellyspot-tab')) {
                     return;
                 }
@@ -401,7 +478,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 }
 
                 const index = parseInt(event.detail && event.detail.selectedTabIndex, 10);
-                const selectedButton = tabs.querySelector('.emby-tab-button[data-index="' + index + '"]');
+                const selectedButton = self.selectedHeaderButton(tabs, index);
                 if (selectedButton && selectedButton.getAttribute('data-jellyspot-tab')) {
                     return;
                 }
@@ -423,9 +500,6 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             page.querySelectorAll('.tabContent[data-jellyspot-tab]').forEach(function (panel) {
                 panel.classList.add('hide');
                 panel.classList.remove('is-active');
-            });
-            page.querySelectorAll('#homeTab, #favoritesTab, .tabContent[data-jellySeerr-tab]').forEach(function (panel) {
-                panel.classList.remove('hide');
             });
         },
 
@@ -451,7 +525,6 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         applyTabs: function (page, tabsSlider) {
             const self = this;
             let changed = false;
-            let index = self.nextTabIndex(tabsSlider);
 
             tabsSlider.querySelectorAll('[data-jellyspot-tab]').forEach(function (btn) {
                 if (!self.TAB_DEFS[btn.getAttribute('data-jellyspot-tab')]) {
@@ -475,6 +548,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     tabsSlider.appendChild(button);
                     changed = true;
                 } else {
+                    self.bindPluginTabClick(button, id);
                     const titleEl = button.querySelector('.emby-button-foreground');
                     const wanted = self.TAB_DEFS[id].defaultTitle;
                     if (titleEl && titleEl.textContent !== wanted) {
@@ -487,16 +561,11 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     page.appendChild(panel);
                     changed = true;
                 }
-
-                if (!button.hasAttribute('data-index')) {
-                    button.setAttribute('data-index', String(index));
-                    panel.setAttribute('data-index', String(index));
-                    index += 1;
-                    changed = true;
-                } else {
-                    panel.setAttribute('data-index', button.getAttribute('data-index'));
-                }
             });
+
+            if (self.alignPluginTab(page, tabsSlider)) {
+                changed = true;
+            }
 
             return changed;
         },
