@@ -16,7 +16,9 @@ public class SpotifyAuthService
         "user-read-private",
         "playlist-read-private",
         "playlist-read-collaborative",
-        "user-follow-read"
+        "user-follow-read",
+        "user-top-read",
+        "user-read-recently-played"
     ];
 
     private readonly JellySpotStore _store;

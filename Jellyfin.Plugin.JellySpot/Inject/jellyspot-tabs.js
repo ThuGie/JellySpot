@@ -1011,6 +1011,76 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 (detail ? '<p>' + this.escapeHtml(detail) + '</p>' : '') + '</div>';
         },
 
+        ensureModal: function (root) {
+            const self = this;
+            const app = root.querySelector('.jellyspot-app') || root;
+            let modal = app.querySelector('.jellyspot-modal');
+            if (modal) {
+                return modal;
+            }
+            modal = document.createElement('div');
+            modal.className = 'jellyspot-modal';
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+            modal.innerHTML =
+                '<div class="jellyspot-modal-backdrop"></div>' +
+                '<div class="jellyspot-modal-panel">' +
+                '<button type="button" class="jellyspot-modal-close" aria-label="Close">×</button>' +
+                '<div class="jellyspot-modal-body"></div>' +
+                '</div>';
+            app.appendChild(modal);
+            modal.querySelector('.jellyspot-modal-backdrop').addEventListener('click', function () {
+                self.closeModal(root);
+            });
+            modal.querySelector('.jellyspot-modal-close').addEventListener('click', function () {
+                self.closeModal(root);
+            });
+            if (!this._modalEscBound) {
+                this._modalEscBound = true;
+                document.addEventListener('keydown', function (e) {
+                    if (e.key !== 'Escape') {
+                        return;
+                    }
+                    const open = document.querySelector('.jellyspot-modal.is-open');
+                    if (!open) {
+                        return;
+                    }
+                    e.preventDefault();
+                    self.closeModal(open.closest('.jellyspot-app') || root);
+                });
+            }
+            return modal;
+        },
+
+        openModal: function (root, title) {
+            const modal = this.ensureModal(root);
+            modal.classList.add('is-open');
+            if (title) {
+                modal.setAttribute('aria-label', title);
+            }
+            document.body.classList.add('jellyspot-modal-open');
+            return modal.querySelector('.jellyspot-modal-body');
+        },
+
+        closeModal: function (root) {
+            const app = (root && root.querySelector) ? (root.querySelector('.jellyspot-app') || root) : document;
+            const modal = app.querySelector ? app.querySelector('.jellyspot-modal') : document.querySelector('.jellyspot-modal');
+            if (modal) {
+                modal.classList.remove('is-open');
+                const body = modal.querySelector('.jellyspot-modal-body');
+                if (body) {
+                    body.innerHTML = '';
+                }
+            }
+            document.body.classList.remove('jellyspot-modal-open');
+        },
+
+        showModalMessage: function (root, title, detail) {
+            const body = this.openModal(root, title);
+            body.innerHTML = '<div class="jellyspot-empty"><strong>' + this.escapeHtml(title) + '</strong>' +
+                (detail ? '<p>' + this.escapeHtml(detail) + '</p>' : '') + '</div>';
+        },
+
         goBrowseBack: function (root) {
             const back = this._browseBack;
             this._browseBack = null;
@@ -1268,15 +1338,15 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             if (!item || typeof item !== 'object') {
                 return item;
             }
-            if (item.track || item.Track) {
-                return item.track || item.Track;
-            }
             if (item.item || item.Item) {
                 var wrapped = item.item || item.Item;
                 if (wrapped && (wrapped.track || wrapped.Track)) {
                     return wrapped.track || wrapped.Track;
                 }
                 return wrapped;
+            }
+            if (item.track || item.Track) {
+                return item.track || item.Track;
             }
             return item;
         },
@@ -1296,10 +1366,8 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         openPlaylist: function (root, id, fallbackName) {
             const self = this;
-            const stage = root.querySelector('.jellyspot-browse-results');
-            if (stage) {
-                stage.innerHTML = '<div class="jellyspot-empty">Opening playlist…</div>';
-            }
+            const host = this.openModal(root, fallbackName || 'Playlist');
+            host.innerHTML = '<div class="jellyspot-empty">Opening playlist…</div>';
             this.notify(root, 'Opening playlist…', 'info');
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists/' + encodeURIComponent(id)), dataType: 'json' })
                 .then(function (data) {
@@ -1309,11 +1377,14 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     const name = self.pick(playlist, 'Name', 'name') || fallbackName || 'Playlist';
                     self.renderTrackPicker(root, {
                         kind: 'playlist',
+                        popup: true,
                         id: id,
                         title: name,
                         subtitle: (self.pick(playlist, 'TrackCount', 'trackCount') || tracks.length) + ' tracks',
                         image: self.coverOf(playlist),
                         tracks: tracks,
+                        restricted: self.pick(data, 'Restricted', 'restricted') || self.pick(playlist, 'ItemsRestricted', 'itemsRestricted'),
+                        error: self.pick(data, 'Error', 'error') || self.pick(playlist, 'ItemsError', 'itemsError'),
                         queueAll: function () { self.queueItem('playlist', id, name, root); },
                         monitor: function () {
                             ApiClient.ajax({
@@ -1328,16 +1399,16 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     });
                 })
                 .catch(function () {
-                    if (stage) {
-                        stage.innerHTML = '<div class="jellyspot-empty">Could not open that playlist. Spotify blocked the track list, or the request failed.</div>';
-                    }
+                    self.showModalMessage(root, 'Could not open that playlist', 'The request failed. Link Spotify from Sync if this keeps happening.');
                     self.notify(root, 'Could not open that playlist.', 'error');
                 });
         },
 
         openAlbum: function (root, id, fallbackName) {
             const self = this;
-            this.setBrowseStatus(root, 'Opening album…');
+            const host = this.openModal(root, fallbackName || 'Album');
+            host.innerHTML = '<div class="jellyspot-empty">Opening album…</div>';
+            this.notify(root, 'Opening album…', 'info');
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Albums/' + encodeURIComponent(id)), dataType: 'json' })
                 .then(function (data) {
                     data = self.coercePayload(data) || {};
@@ -1346,6 +1417,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     const name = self.pick(album, 'Name', 'name') || fallbackName || 'Album';
                     self.renderTrackPicker(root, {
                         kind: 'album',
+                        popup: true,
                         id: id,
                         title: name,
                         subtitle: self.pick(album, 'Artists', 'artists') || '',
@@ -1357,7 +1429,8 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     });
                 })
                 .catch(function () {
-                    self.setBrowseStatus(root, 'Could not open that album.');
+                    self.showModalMessage(root, 'Could not open that album', 'Spotify did not return album tracks.');
+                    self.notify(root, 'Could not open that album.', 'error');
                 });
         },
 
@@ -1386,7 +1459,10 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         renderTrackPicker: function (root, spec) {
             const self = this;
-            const stage = root.querySelector('.jellyspot-browse-results') || root.querySelector('.jellyspot-liked-results');
+            const usePopup = spec.popup === true || spec.kind === 'playlist' || spec.kind === 'album';
+            const stage = usePopup
+                ? this.openModal(root, spec.title)
+                : (root.querySelector('.jellyspot-browse-results') || root.querySelector('.jellyspot-liked-results'));
             if (!stage) {
                 return;
             }
@@ -1394,21 +1470,26 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const tracks = this.coerceTracks(spec.tracks);
             if (!tracks.length) {
                 if (spec.kind === 'playlist') {
-                    this.showStageMessage(
-                        root,
-                        'Spotify did not send these tracks',
-                        'Since February 2026, Development Mode apps only get playlist songs for playlists you own or collaborate on. Followed and public playlists show a cover but no track list. Liked Songs and albums still work — open a playlist you created.'
-                    );
-                    this.notify(root, 'Playlist tracks blocked by Spotify', 'error');
+                    const detail = spec.error
+                        ? spec.error
+                        : (spec.restricted
+                            ? 'Spotify only sends playlist songs for playlists you own or collaborate on. Followed and editorial playlists show a cover but no track list. Liked Songs and albums still work.'
+                            : 'This playlist has no readable songs. If you created it, try Sync → Link Spotify again so playlist-read-private is granted.');
+                    this.showModalMessage(root, spec.title || 'Playlist', detail);
+                    this.notify(root, spec.error || 'No playlist songs returned', spec.restricted ? 'error' : 'ok');
                     return;
                 }
-                this.showStageMessage(root, 'No playable tracks', 'Spotify returned this ' + (spec.kind || 'item') + ' but none of the tracks were readable.');
+                if (usePopup) {
+                    this.showModalMessage(root, 'No playable tracks', 'Spotify returned this ' + (spec.kind || 'item') + ' but none of the tracks were readable.');
+                } else {
+                    this.showStageMessage(root, 'No playable tracks', 'Spotify returned this ' + (spec.kind || 'item') + ' but none of the tracks were readable.');
+                }
                 this.notify(root, '0 tracks loaded', 'error');
                 return;
             }
             stage.innerHTML =
                 '<div class="jellyspot-detail">' +
-                '<button type="button" class="jellyspot-text-back jellyspot-back-btn">← Back</button>' +
+                (usePopup ? '' : '<button type="button" class="jellyspot-text-back jellyspot-back-btn">← Back</button>') +
                 '<div class="jellyspot-detail-head">' +
                 (spec.image
                     ? '<img class="jellyspot-detail-cover" src="' + this.escapeHtml(spec.image) + '" alt="" />'
@@ -1467,9 +1548,6 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 if (albumBtn) {
                     albumBtn.addEventListener('click', function (e) {
                         e.stopPropagation();
-                        self._browseBack = function () {
-                            self.renderTrackPicker(root, spec);
-                        };
                         self.openAlbum(root, albumBtn.getAttribute('data-album-id'), album);
                     });
                 }
@@ -1483,9 +1561,12 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 tbody.appendChild(tr);
             });
 
-            stage.querySelector('.jellyspot-back-btn').addEventListener('click', function () {
-                self.goBrowseBack(root);
-            });
+            const backBtn = stage.querySelector('.jellyspot-back-btn');
+            if (backBtn) {
+                backBtn.addEventListener('click', function () {
+                    self.goBrowseBack(root);
+                });
+            }
             stage.querySelector('.jellyspot-select-all').addEventListener('click', function () {
                 self.setVisibleTrackChecks(stage, true);
             });
@@ -1684,6 +1765,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         showLibrarySection: function (root, section) {
             const self = this;
             const id = section || 'home';
+            this.closeModal(root);
             this._currentLib = id;
             this._browseBack = function () {
                 self.showLibrarySection(root, id === 'liked' ? 'home' : id);
@@ -1797,6 +1879,56 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         self.showLibrarySection(root, 'liked');
                     });
                     stage.appendChild(featured);
+
+                    if (self.pick(data, 'NeedsRelink', 'needsRelink')) {
+                        const relink = document.createElement('div');
+                        relink.className = 'jellyspot-empty is-inline';
+                        relink.innerHTML = '<strong>Link Spotify again</strong><p>Recently played and Your top tracks need new Spotify permission. Open Sync and click Link Spotify.</p>';
+                        stage.appendChild(relink);
+                    }
+
+                    function addTrackShelf(title, list) {
+                        list = list || [];
+                        if (!list.length) {
+                            return;
+                        }
+                        self.addShelf(stage, title, list.length, null, function (row) {
+                            list.forEach(function (track) {
+                                const id = self.pick(track, 'Id', 'id');
+                                const name = self.pick(track, 'Name', 'name') || 'Untitled';
+                                self.addCatalogCard(row, {
+                                    kindLabel: 'track',
+                                    title: name,
+                                    meta: self.artistsOf(track),
+                                    image: self.coverOf(track),
+                                    trackId: id,
+                                    queue: function () { self.queueItem('track', id, name, root); }
+                                });
+                            });
+                        });
+                    }
+
+                    addTrackShelf('Recently played', self.pick(data, 'RecentlyPlayed', 'recentlyPlayed'));
+                    addTrackShelf('Your top tracks', self.pick(data, 'TopTracks', 'topTracks'));
+
+                    const topArtists = self.pick(data, 'TopArtists', 'topArtists') || [];
+                    if (topArtists.length) {
+                        self.addShelf(stage, 'Your top artists', topArtists.length, null, function (row) {
+                            topArtists.forEach(function (artist) {
+                                const id = self.pick(artist, 'Id', 'id');
+                                const name = self.pick(artist, 'Name', 'name') || id;
+                                const genres = self.pick(artist, 'Genres', 'genres') || [];
+                                self.addCatalogCard(row, {
+                                    kindLabel: 'artist',
+                                    title: name,
+                                    meta: (Array.isArray(genres) ? genres.slice(0, 2).join(' · ') : '') || 'Artist',
+                                    image: self.coverOf(artist),
+                                    avatar: true,
+                                    open: function () { self.openArtist(root, id, name); }
+                                });
+                            });
+                        });
+                    }
 
                     self.addShelf(stage, 'Liked songs', likedCount, function () {
                         self.showLibrarySection(root, 'liked');
@@ -1952,7 +2084,8 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         openArtist: function (root, id, fallbackName) {
             const self = this;
-            this.showStageMessage(root, 'Opening artist…');
+            const stage = this.openModal(root, fallbackName || 'Artist');
+            stage.innerHTML = '<div class="jellyspot-empty">Opening artist…</div>';
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Artists/' + encodeURIComponent(id)), dataType: 'json' })
                 .then(function (data) {
                     data = self.coercePayload(data) || {};
@@ -1963,10 +2096,8 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     const genres = self.pick(artist, 'Genres', 'genres') || [];
                     const genreText = Array.isArray(genres) ? genres.slice(0, 4).join(' · ') : '';
                     const followers = self.pick(artist, 'Followers', 'followers') || 0;
-                    const stage = root.querySelector('.jellyspot-browse-results');
                     stage.innerHTML =
                         '<div class="jellyspot-detail">' +
-                        '<button type="button" class="jellyspot-text-back jellyspot-back-btn">← Back</button>' +
                         '<div class="jellyspot-detail-head is-artist">' +
                         (self.coverOf(artist)
                             ? '<img class="jellyspot-detail-cover is-round" src="' + self.escapeHtml(self.coverOf(artist)) + '" alt="" />'
@@ -2006,22 +2137,16 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                             title: albumName,
                             meta: (self.pick(album, 'Year', 'year') || '') + (self.pick(album, 'TrackCount', 'trackCount') ? ' · ' + self.pick(album, 'TrackCount', 'trackCount') + ' tracks' : ''),
                             image: self.coverOf(album),
-                            open: function () {
-                                self._browseBack = function () { self.openArtist(root, id, name); };
-                                self.openAlbum(root, albumId, albumName);
-                            },
+                            open: function () { self.openAlbum(root, albumId, albumName); },
                             queue: function () { self.queueItem('album', albumId, albumName, root); }
                         });
                     });
                     stage.appendChild(grid);
-                    stage.querySelector('.jellyspot-back-btn').addEventListener('click', function () {
-                        self.goBrowseBack(root);
-                    });
                     self.markOwnedCards(stage);
                     self.setBrowseStatus(root, name);
                 })
                 .catch(function () {
-                    self.showStageMessage(root, 'Could not open that artist', 'The artist page failed to load.');
+                    self.showModalMessage(root, 'Could not open that artist', 'The artist page failed to load.');
                     self.notify(root, 'Could not open that artist.', 'error');
                 });
         },
@@ -2071,7 +2196,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     '<div class="jellyspot-hero"><div>' +
                     '<div class="jellyspot-kicker">Account</div>' +
                     '<h2 class="sectionTitle jellyspot-title">Sync</h2>' +
-                    '<p class="jellyspot-lede">Link your Spotify account. Other Jellyfin users keep their own links and playlists.</p>' +
+                    '<p class="jellyspot-lede">Link your Spotify account. Other Jellyfin users keep their own links and playlists. Link again after this update to load Recently played and Your top tracks.</p>' +
                     '</div></div>' +
                     '<p class="jellyspot-status">This link is only for your Jellyfin user.</p>' +
                     '<div class="jellyspot-status jellyspot-link-status">Checking link status…</div>' +

@@ -7,8 +7,8 @@
   "overview": "Spotify browse + sync for Jellyfin",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-08T00:00:00.0000000Z",
-  "version": "1.0.22.0",
-  "changelog": "Full-width Library tabs; load playlist songs via Spotify /items (Feb 2026 API)",
+  "version": "1.0.23.0",
+  "changelog": "Playlist popup; OpenAPI playlist items; recently played and top tracks/artists shelves",
   "imagePath": "thumb.png",
   "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySpot/main/assets/jellyspot.png"
 }

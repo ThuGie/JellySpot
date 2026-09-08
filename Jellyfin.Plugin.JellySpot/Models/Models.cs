@@ -171,6 +171,10 @@ public class SpotifyPlaylistInfo
     public bool Collaborative { get; set; }
 
     public string? OwnerId { get; set; }
+
+    public bool ItemsRestricted { get; set; }
+
+    public string? ItemsError { get; set; }
 }
 
 public class SpotifyAlbumInfo

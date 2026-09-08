@@ -235,7 +235,13 @@ public class JellySpotController : ControllerBase
             return NotFound();
         }
 
-        return Ok(new { Playlist = result.Value.Playlist, Tracks = result.Value.Tracks });
+        return Ok(new
+        {
+            Playlist = result.Value.Playlist,
+            Tracks = result.Value.Tracks,
+            Restricted = result.Value.Playlist.ItemsRestricted,
+            Error = result.Value.Playlist.ItemsError
+        });
     }
 
     [HttpGet("Albums/{id}")]
@@ -278,15 +284,21 @@ public class JellySpotController : ControllerBase
         var albumsTask = _spotify.GetSavedAlbumsAsync(userId, 40, ct);
         var artistsTask = _spotify.GetFollowedArtistsAsync(userId, 40, ct);
         var likedTask = _spotify.GetLikedPreviewAsync(userId, 12, ct);
-        await Task.WhenAll(playlistsTask, albumsTask, artistsTask, likedTask).ConfigureAwait(false);
+        var recentTask = _spotify.GetRecentlyPlayedAsync(userId, 20, ct);
+        var topTracksTask = _spotify.GetTopTracksAsync(userId, 18, "medium_term", ct);
+        var topArtistsTask = _spotify.GetTopArtistsAsync(userId, 18, "medium_term", ct);
+        await Task.WhenAll(playlistsTask, albumsTask, artistsTask, likedTask, recentTask, topTracksTask, topArtistsTask).ConfigureAwait(false);
 
         var playlists = playlistsTask.Result;
         var liked = likedTask.Result;
+        var scope = tokens.Scope ?? string.Empty;
         return Ok(new
         {
             Linked = true,
             SpotifyDisplayName = tokens.DisplayName,
             SpotifyUserId = tokens.SpotifyUserId,
+            NeedsRelink = scope.IndexOf("user-top-read", StringComparison.OrdinalIgnoreCase) < 0
+                || scope.IndexOf("user-read-recently-played", StringComparison.OrdinalIgnoreCase) < 0,
             PlaylistCount = playlists.Count,
             Playlists = playlists.Take(18).ToList(),
             Albums = albumsTask.Result,
@@ -294,7 +306,10 @@ public class JellySpotController : ControllerBase
             Artists = artistsTask.Result,
             ArtistCount = artistsTask.Result.Count,
             LikedCount = liked.Total,
-            LikedPreview = liked.Preview
+            LikedPreview = liked.Preview,
+            RecentlyPlayed = recentTask.Result,
+            TopTracks = topTracksTask.Result,
+            TopArtists = topArtistsTask.Result
         });
     }
 

@@ -747,3 +747,81 @@
         width: 100%;
     }
 }
+
+.jellyspot-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+}
+
+.jellyspot-modal.is-open {
+    display: block;
+}
+
+.jellyspot-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+}
+
+.jellyspot-modal-panel {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(1100px, calc(100vw - 2em));
+    height: min(860px, calc(100vh - 2.4em));
+    display: flex;
+    flex-direction: column;
+    border-radius: 1.25rem;
+    background: var(--background-color, #101010);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+}
+
+.jellyspot-modal-close {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 6;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.55);
+    color: inherit;
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.jellyspot-modal-close:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.jellyspot-modal-body {
+    flex: 1;
+    overflow: auto;
+    padding: 1.25em 1.35em 1.6em;
+}
+
+.jellyspot-modal-body .jellyspot-actionbar {
+    top: 0;
+}
+
+.jellyspot-modal-body .jellyspot-empty {
+    margin-top: 3em;
+}
+
+body.jellyspot-modal-open {
+    overflow: hidden;
+}
+
+@media (max-width: 720px) {
+    .jellyspot-modal-panel {
+        width: calc(100vw - 0.6em);
+        height: calc(100vh - 0.6em);
+        border-radius: 0.85rem;
+    }
+}
