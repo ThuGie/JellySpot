@@ -18,10 +18,23 @@ jobs:
           dotnet-version: "9.0.x"
 
       - name: Restore
-        run: dotnet restore Jellyfin.Plugin.JellySpot/Jellyfin.Plugin.JellySpot.csproj
+        run: dotnet restore JellySpot.sln
 
       - name: Build
         run: dotnet build Jellyfin.Plugin.JellySpot/Jellyfin.Plugin.JellySpot.csproj -c Release --no-restore
+
+      - name: Backend regression tests
+        run: dotnet test JellySpot.sln -c Release --no-restore
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: UI regression tests
+        run: |
+          npm ci --prefix Jellyfin.Plugin.JellySpot.Tests
+          npm test --prefix Jellyfin.Plugin.JellySpot.Tests
 
       - name: Package zip
         run: bash scripts/package.sh artifacts

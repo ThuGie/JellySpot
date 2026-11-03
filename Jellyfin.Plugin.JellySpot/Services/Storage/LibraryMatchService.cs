@@ -78,6 +78,25 @@ public partial class LibraryMatchService
         return false;
     }
 
+    /// <summary>Uses the normal match rules against an already user-filtered set of audio items.</summary>
+    public static Audio? FindVisibleAudio(SpotifyTrackInfo track, IEnumerable<Audio> visibleAudio)
+    {
+        var isrc = NormalizeIsrc(track.Isrc);
+        var title = NormalizeTitle(track.Name);
+        foreach (var audio in visibleAudio)
+        {
+            if (!string.IsNullOrEmpty(isrc) && string.Equals(isrc, ReadIsrc(audio), StringComparison.Ordinal)) return audio;
+            var artists = (audio.Artists?.Count > 0 ? audio.Artists : audio.AlbumArtists) ?? [];
+            var names = artists.Where(a => !string.IsNullOrWhiteSpace(a)).ToArray();
+            var candidate = new LibraryAudio(audio.Name ?? "", NormalizeTitle(audio.Name ?? ""),
+                names.Select(NormalizeArtist).Where(a => a.Length > 0).ToArray(), audio.Album ?? "",
+                NormalizeAlbumKey(audio.Album ?? "", names), ReadIsrc(audio),
+                audio.RunTimeTicks is > 0 ? (int)(audio.RunTimeTicks.Value / TimeSpan.TicksPerMillisecond) : 0);
+            if (IsMatch(track, title, candidate)) return audio;
+        }
+        return null;
+    }
+
     private Catalog GetCatalog()
     {
         lock (_gate)

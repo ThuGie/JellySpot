@@ -141,7 +141,7 @@ public class SpotifyApiClient
                 .ConfigureAwait(false);
         }
 
-        playlist.ItemsRestricted = tracks.Count == 0;
+        playlist.ItemsRestricted = !string.IsNullOrEmpty(itemsError);
         playlist.ItemsError = itemsError;
         if (tracks.Count == 0)
         {
@@ -166,13 +166,13 @@ public class SpotifyApiClient
             var json = await GetStringAsync(userId, path, $"me:tracks:{offset}", TimeSpan.FromHours(12), ct).ConfigureAwait(false);
             if (json == null)
             {
-                break;
+                throw new HttpRequestException("Spotify liked songs could not be read.");
             }
 
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("items", out var items))
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
             {
-                break;
+                throw new HttpRequestException("Spotify returned an incomplete liked songs response.");
             }
 
             var count = 0;
@@ -705,22 +705,21 @@ public class SpotifyApiClient
         TimeSpan cacheTtl,
         CancellationToken ct)
     {
-        var scopedKey = userId.ToString("N") + ":" + cacheKey;
+        var tokens = await _auth.GetValidTokensAsync(userId, ct).ConfigureAwait(false);
+        if (tokens == null) throw new InvalidOperationException("Spotify is not linked or requires relinking.");
+        var generation = tokens.Generation;
+        var scopedKey = userId.ToString("N") + ":" + tokens.Generation + ":" + cacheKey;
         if (cacheTtl > TimeSpan.Zero)
         {
             var cached = await _cache.GetAsync(scopedKey, ct).ConfigureAwait(false);
             if (cached != null)
             {
+                await _auth.EnsureGenerationAsync(userId, generation, ct);
                 return (cached, null);
             }
         }
 
-        var tokens = await _auth.GetValidTokensAsync(userId, ct).ConfigureAwait(false);
-        if (tokens == null)
-        {
-            return (null, "Spotify is not linked for this Jellyfin user.");
-        }
-
+        var refreshedOnce = false;
         for (var attempt = 0; attempt < 5; attempt++)
         {
             await _rateLimiter.WaitAsync(ct).ConfigureAwait(false);
@@ -748,10 +747,16 @@ public class SpotifyApiClient
 
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
-                tokens = await _auth.GetValidTokensAsync(userId, ct).ConfigureAwait(false);
+                if (refreshedOnce)
+                {
+                    await _auth.MarkRejectedAsync(userId, tokens.Generation, ct);
+                    throw new InvalidOperationException("Spotify authorization expired. Link Spotify again.");
+                }
+                refreshedOnce = true;
+                tokens = await _auth.GetValidTokensAsync(userId, ct, true, tokens.AccessToken).ConfigureAwait(false);
                 if (tokens == null)
                 {
-                    return (null, "Spotify login expired. Link Spotify again from Sync.");
+                    throw new InvalidOperationException("Spotify login expired. Link Spotify again from Sync.");
                 }
 
                 continue;
@@ -767,25 +772,26 @@ public class SpotifyApiClient
             {
                 var error = ReadSpotifyError(body) ?? "Forbidden";
                 _logger.LogInformation("Spotify API {Path} is not readable (403): {Error}", relativePath, error);
-                return (null, error);
+                throw new HttpRequestException("Spotify request failed: " + error);
             }
 
             if (!response.IsSuccessStatusCode)
             {
                 var error = ReadSpotifyError(body) ?? response.StatusCode.ToString();
                 _logger.LogWarning("Spotify API {Path} failed: {Status} {Body}", relativePath, response.StatusCode, body);
-                return (null, error);
+                throw new HttpRequestException("Spotify request failed: " + error);
             }
 
+            await _auth.EnsureGenerationAsync(userId, generation, ct);
             if (cacheTtl > TimeSpan.Zero && !IsHollowTrackPage(body))
             {
-                await _cache.SetAsync(scopedKey, body, ct).ConfigureAwait(false);
+                await _cache.SetAsync(scopedKey, body, cacheTtl, ct).ConfigureAwait(false);
             }
 
             return (body, null);
         }
 
-        return (null, "Spotify rate limit, try again in a moment.");
+        throw new HttpRequestException("Spotify rate limit, try again in a moment.");
     }
 
     private static string? ReadSpotifyError(string? body)
@@ -834,7 +840,7 @@ public class SpotifyApiClient
         {
             if (!seen.Add(next))
             {
-                break;
+                return "Spotify repeated a playlist page; membership was not updated.";
             }
 
             pages++;
@@ -853,6 +859,8 @@ public class SpotifyApiClient
 
             using var doc = JsonDocument.Parse(json);
             var paging = ResolvePaging(doc.RootElement);
+            if (paging.ValueKind != JsonValueKind.Object || !paging.TryGetProperty("items", out var pageItems) || pageItems.ValueKind != JsonValueKind.Array)
+                return "Spotify returned an incomplete playlist response.";
             var before = tracks.Count;
             AddTracksFromPage(paging, tracks);
             if (tracks.Count == before)
@@ -867,7 +875,7 @@ public class SpotifyApiClient
             }
         }
 
-        return lastError;
+        return !string.IsNullOrWhiteSpace(next) ? lastError ?? "Spotify playlist pagination was incomplete." : lastError;
     }
 
     private void LogUnparsedPlaylistPage(string playlistId, JsonElement root)

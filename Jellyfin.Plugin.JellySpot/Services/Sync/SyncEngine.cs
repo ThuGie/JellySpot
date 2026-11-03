@@ -9,34 +9,33 @@ namespace Jellyfin.Plugin.JellySpot.Services.Sync;
 
 public class SyncEngine
 {
+    private readonly IUserManager _users;
+    private readonly SpotifyAuthService _auth;
     private readonly SpotifyApiClient _spotify;
     private readonly JellySpotStore _store;
     private readonly DownloadQueueService _queue;
-    private readonly LibraryStorage _storage;
-    private readonly ILibraryManager _libraryManager;
     private readonly ILogger<SyncEngine> _logger;
-    private DateTime _lastLibraryRefresh = DateTime.MinValue;
 
     public SyncEngine(
         SpotifyApiClient spotify,
+        IUserManager users,
+        SpotifyAuthService auth,
         JellySpotStore store,
         DownloadQueueService queue,
-        LibraryStorage storage,
-        ILibraryManager libraryManager,
         ILogger<SyncEngine> logger)
     {
         _spotify = spotify;
+        _users = users;
+        _auth = auth;
         _store = store;
         _queue = queue;
-        _storage = storage;
-        _libraryManager = libraryManager;
         _logger = logger;
     }
 
     public async Task SyncUserAsync(Guid userId, CancellationToken ct = default)
     {
         var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
-        if (!settings.Enabled)
+        if (!settings.Enabled || _users.GetUserById(userId) == null || await _auth.GetValidTokensAsync(userId, ct) == null)
         {
             return;
         }
@@ -51,17 +50,12 @@ public class SyncEngine
                     await _queue.EnqueueTrackAsync(userId, track, "liked", "Liked Songs", ct).ConfigureAwait(false);
                 }
 
-                var paths = new List<string>();
-                foreach (var track in liked)
+                await _store.SaveCollectionAsync(new UserCollection
                 {
-                    var idx = await _store.GetTrackIndexAsync(track.Id, ct).ConfigureAwait(false);
-                    if (!string.IsNullOrEmpty(idx?.RelativePath))
-                    {
-                        paths.Add(idx.RelativePath);
-                    }
-                }
+                    OwnerId = userId, SourceId = "liked", Name = "Liked Songs", UpdatedAtUtc = DateTime.UtcNow,
+                    Tracks = FilterTracks(liked, settings).ToList()
+                }, ct);
 
-                await _storage.WritePlaylistM3u8Async("Liked Songs", paths, ct).ConfigureAwait(false);
             }
 
             foreach (var playlistId in settings.MonitoredPlaylistIds.Distinct())
@@ -83,7 +77,6 @@ public class SyncEngine
             settings.LastError = null;
             await _store.SaveUserSettingsAsync(settings, ct).ConfigureAwait(false);
 
-            MaybeRefreshLibrary();
             _queue.EnsureWorker();
         }
         catch (Exception ex)
@@ -117,37 +110,20 @@ public class SyncEngine
     private async Task SyncPlaylistAsync(Guid userId, string playlistId, UserSyncSettings settings, CancellationToken ct)
     {
         var result = await _spotify.GetPlaylistWithTracksAsync(userId, playlistId, ct).ConfigureAwait(false);
-        if (result == null)
-        {
-            return;
-        }
+        if (result == null) throw new InvalidOperationException("Spotify playlist could not be read.");
 
         var (playlist, tracks) = result.Value;
-        var existing = await _store.GetPlaylistSnapshotAsync(userId, playlistId, ct).ConfigureAwait(false);
-        if (existing != null &&
-            !string.IsNullOrEmpty(playlist.SnapshotId) &&
-            string.Equals(existing.SnapshotId, playlist.SnapshotId, StringComparison.Ordinal))
-        {
-            _logger.LogInformation("Playlist {Name} unchanged (snapshot {Snapshot})", playlist.Name, playlist.SnapshotId);
-            return;
-        }
-
+        if (playlist.ItemsRestricted) throw new InvalidOperationException("Spotify playlist is unavailable for this account.");
         foreach (var track in FilterTracks(tracks, settings))
         {
             await _queue.EnqueueTrackAsync(userId, track, playlist.Id, playlist.Name, ct).ConfigureAwait(false);
         }
 
-        var paths = new List<string>();
-        foreach (var track in tracks)
+        await _store.SaveCollectionAsync(new UserCollection
         {
-            var idx = await _store.GetTrackIndexAsync(track.Id, ct).ConfigureAwait(false);
-            if (!string.IsNullOrEmpty(idx?.RelativePath))
-            {
-                paths.Add(idx.RelativePath);
-            }
-        }
-
-        await _storage.WritePlaylistM3u8Async(playlist.Name, paths, ct).ConfigureAwait(false);
+            OwnerId = userId, SourceId = playlist.Id, Name = playlist.Name, CoverUrl = playlist.ImageUrl,
+            UpdatedAtUtc = DateTime.UtcNow, Tracks = FilterTracks(tracks, settings).ToList()
+        }, ct);
 
         if (!string.IsNullOrEmpty(playlist.SnapshotId))
         {
@@ -182,32 +158,4 @@ public class SyncEngine
         }
     }
 
-    private void MaybeRefreshLibrary()
-    {
-        if (Plugin.Instance?.Configuration.TriggerLibraryRefresh != true)
-        {
-            return;
-        }
-
-        if (DateTime.UtcNow - _lastLibraryRefresh < TimeSpan.FromMinutes(5))
-        {
-            return;
-        }
-
-        try
-        {
-            var root = Plugin.Instance.Configuration.StorageRootPath;
-            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-            {
-                return;
-            }
-
-            _libraryManager.QueueLibraryScan();
-            _lastLibraryRefresh = DateTime.UtcNow;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Library refresh failed");
-        }
-    }
 }

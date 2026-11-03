@@ -1,26 +1,34 @@
 using Jellyfin.Plugin.JellySpot.Models;
 using Jellyfin.Plugin.JellySpot.Services.Storage;
 using Microsoft.Extensions.Logging;
+using MediaBrowser.Controller.Library;
 
 namespace Jellyfin.Plugin.JellySpot.Services.Download;
 
 public class DownloadQueueService
 {
+    private readonly ILibraryManager _libraryManager;
+    private DateTime _lastScan;
+    private bool _scanPending;
+    private readonly object _scanGate = new();
     private readonly JellySpotStore _store;
     private readonly LibraryStorage _storage;
     private readonly TrackDownloader _downloader;
     private readonly ILogger<DownloadQueueService> _logger;
+    private readonly object _startGate = new();
     private readonly SemaphoreSlim _workerLock = new(1, 1);
     private CancellationTokenSource? _cts;
     private Task? _worker;
 
     public DownloadQueueService(
         JellySpotStore store,
+        ILibraryManager libraryManager,
         LibraryStorage storage,
         TrackDownloader downloader,
         ILogger<DownloadQueueService> logger)
     {
         _store = store;
+        _libraryManager = libraryManager;
         _storage = storage;
         _downloader = downloader;
         _logger = logger;
@@ -28,10 +36,7 @@ public class DownloadQueueService
 
     public async Task<EnqueueResult> EnqueueTrackAsync(Guid userId, SpotifyTrackInfo track, string? playlistId = null, string? playlistName = null, CancellationToken ct = default)
     {
-        if (await _storage.IsOwnedAsync(track, ct).ConfigureAwait(false))
-        {
-            return EnqueueResult.AlreadyDownloaded;
-        }
+        var owned = await _storage.IsOwnedAsync(track, ct).ConfigureAwait(false);
 
         var item = new QueueItem
         {
@@ -49,9 +54,9 @@ public class DownloadQueueService
             CoverUrl = track.CoverUrl,
             PlaylistId = playlistId,
             PlaylistName = playlistName,
-            Status = "Pending"
+            Status = owned ? "Completed" : "Pending"
         };
-        var result = await _store.EnqueueAsync(item, ct).ConfigureAwait(false);
+        var result = await _store.EnqueueAsync(item, ct, missingAudio: !owned).ConfigureAwait(false);
         if (result is EnqueueResult.Added or EnqueueResult.Retried)
         {
             EnsureWorker();
@@ -62,62 +67,40 @@ public class DownloadQueueService
 
     public void EnsureWorker()
     {
-        if (_worker is { IsCompleted: false })
+        lock (_startGate)
         {
-            return;
+            if (_worker is { IsCompleted: false }) return;
+            _cts?.Dispose();
+            _cts = new CancellationTokenSource();
+            _worker = Task.Run(() => ProcessLoopAsync(_cts.Token));
         }
-
-        _cts = new CancellationTokenSource();
-        _worker = Task.Run(() => ProcessLoopAsync(_cts.Token));
     }
 
-    public async Task RematchAsync(string queueItemId, CancellationToken ct = default)
+    public void RefreshLibrary()
     {
-        var item = await _store.GetQueueItemAsync(queueItemId, ct).ConfigureAwait(false);
-        if (item == null)
-        {
-            return;
-        }
-
-        await _store.ClearTrackMatchAsync(item.SpotifyTrackId, ct).ConfigureAwait(false);
-        item.Status = "Pending";
-        item.Error = null;
-        item.YoutubeVideoId = null;
-        item.MatchScore = null;
-        await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
-        EnsureWorker();
+        lock (_scanGate) _scanPending = true;
+        FlushLibraryRefresh();
     }
 
-    public async Task RetryAsync(string queueItemId, CancellationToken ct = default)
+    public void FlushLibraryRefresh()
     {
-        var item = await _store.GetQueueItemAsync(queueItemId, ct).ConfigureAwait(false);
-        if (item == null)
+        lock (_scanGate)
         {
-            return;
+            if (!_scanPending) return;
+            if (Plugin.Instance?.Configuration.TriggerLibraryRefresh != true || DateTime.UtcNow - _lastScan < TimeSpan.FromSeconds(30)) return;
+            if (!Directory.Exists(_storage.GetStorageRoot())) return;
+            _libraryManager.QueueLibraryScan();
+            _lastScan = DateTime.UtcNow;
+            _scanPending = false;
         }
-
-        item.Status = "Pending";
-        item.Error = null;
-        await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
-        EnsureWorker();
     }
 
-    public async Task<int> RetryFailedAsync(CancellationToken ct = default)
+    public async Task StopAsync(CancellationToken ct)
     {
-        var failed = await _store.GetQueueAsync("Failed", 500, ct).ConfigureAwait(false);
-        foreach (var item in failed)
-        {
-            item.Status = "Pending";
-            item.Error = null;
-            await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
-        }
-
-        if (failed.Count > 0)
-        {
-            EnsureWorker();
-        }
-
-        return failed.Count;
+        Task? worker;
+        lock (_startGate) { _cts?.Cancel(); worker = _worker; }
+        if (worker != null)
+            try { await worker.WaitAsync(ct); } catch (OperationCanceledException) { }
     }
 
     private async Task ProcessLoopAsync(CancellationToken ct)
@@ -151,9 +134,13 @@ public class DownloadQueueService
                     try
                     {
                         await _downloader.DownloadAsync(item, false, ct).ConfigureAwait(false);
+                        if (item.Status == "Completed") RefreshLibrary();
                     }
                     catch (Exception ex)
                     {
+                        item.Status = "Failed";
+                        item.Error = "Download failed. See server logs for details.";
+                        await _store.UpdateQueueItemAsync(item, CancellationToken.None);
                         _logger.LogError(ex, "Queue item {Id} failed", item.Id);
                     }
                     finally

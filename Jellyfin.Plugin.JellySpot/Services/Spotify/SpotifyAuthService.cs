@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -21,6 +22,8 @@ public class SpotifyAuthService
         "user-read-recently-played"
     ];
 
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _gates = new();
+    private SemaphoreSlim Gate(Guid id) => _gates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
     private readonly JellySpotStore _store;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SpotifyAuthService> _logger;
@@ -69,53 +72,92 @@ public class SpotifyAuthService
 
     public async Task HandleCallbackAsync(string code, string state, CancellationToken ct = default)
     {
-        var oauth = await _store.TakeOAuthStateAsync(state, ct).ConfigureAwait(false);
-        if (oauth is null)
+        var userId = await _store.GetOAuthStateUserAsync(state, ct)
+            ?? throw new InvalidOperationException("Invalid or expired OAuth state.");
+        var gate = Gate(userId);
+        await gate.WaitAsync(ct);
+        try
         {
-            throw new InvalidOperationException("Invalid or expired OAuth state.");
+            var oauth = await _store.TakeOAuthStateAsync(state, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Invalid or expired OAuth state.");
+            var tokens = await ExchangeCodeAsync(code, oauth.CodeVerifier, ct).ConfigureAwait(false);
+            var profile = await FetchProfileAsync(tokens.AccessToken, ct).ConfigureAwait(false);
+            tokens.SpotifyUserId = profile.UserId;
+            tokens.DisplayName = profile.DisplayName;
+            tokens.Generation = Guid.NewGuid().ToString("N");
+            await _store.ClearUserCacheAsync(oauth.UserId, ct);
+            await _store.SaveTokensAsync(oauth.UserId, tokens, ct).ConfigureAwait(false);
         }
-
-        var tokens = await ExchangeCodeAsync(code, oauth.Value.CodeVerifier, ct).ConfigureAwait(false);
-        var profile = await FetchProfileAsync(tokens.AccessToken, ct).ConfigureAwait(false);
-        tokens.SpotifyUserId = profile.UserId;
-        tokens.DisplayName = profile.DisplayName;
-        await _store.SaveTokensAsync(oauth.Value.UserId, tokens, ct).ConfigureAwait(false);
-        _logger.LogInformation("Linked Spotify account {DisplayName} to Jellyfin user {UserId}", tokens.DisplayName, oauth.Value.UserId);
+        finally { gate.Release(); }
     }
 
-    public async Task<SpotifyTokens?> GetValidTokensAsync(Guid jellyfinUserId, CancellationToken ct = default)
+    public async Task<SpotifyTokens?> GetValidTokensAsync(Guid jellyfinUserId, CancellationToken ct = default,
+        bool forceRefresh = false, string? rejectedToken = null)
     {
-        var tokens = await _store.GetTokensAsync(jellyfinUserId, ct).ConfigureAwait(false);
-        if (tokens == null)
+        var gate = Gate(jellyfinUserId);
+        await gate.WaitAsync(ct);
+        try
         {
-            return null;
+            var tokens = await _store.GetTokensAsync(jellyfinUserId, ct).ConfigureAwait(false);
+            if (tokens == null || tokens.RelinkRequired) return null;
+            if (rejectedToken != null && tokens.AccessToken != rejectedToken) return tokens;
+            if (!forceRefresh && tokens.ExpiresAtUtc > DateTime.UtcNow.AddMinutes(2)) return tokens;
+            if (string.IsNullOrEmpty(tokens.RefreshToken))
+            {
+                tokens.RelinkRequired = true;
+                await _store.SaveTokensAsync(jellyfinUserId, tokens, ct);
+                return null;
+            }
+            SpotifyTokens refreshed;
+            try { refreshed = await RefreshAsync(tokens.RefreshToken, ct).ConfigureAwait(false); }
+            catch (SpotifyAuthorizationException)
+            {
+                tokens.RelinkRequired = true;
+                await _store.SaveTokensAsync(jellyfinUserId, tokens, ct);
+                return null;
+            }
+            refreshed.Generation = tokens.Generation;
+            refreshed.SpotifyUserId = tokens.SpotifyUserId;
+            refreshed.DisplayName = tokens.DisplayName;
+            if (string.IsNullOrEmpty(refreshed.Scope)) refreshed.Scope = tokens.Scope;
+            if (string.IsNullOrEmpty(refreshed.RefreshToken)) refreshed.RefreshToken = tokens.RefreshToken;
+            await _store.SaveTokensAsync(jellyfinUserId, refreshed, ct).ConfigureAwait(false);
+            return refreshed;
         }
-
-        if (tokens.ExpiresAtUtc > DateTime.UtcNow.AddMinutes(2))
-        {
-            return tokens;
-        }
-
-        if (string.IsNullOrEmpty(tokens.RefreshToken))
-        {
-            return null;
-        }
-
-        var refreshed = await RefreshAsync(tokens.RefreshToken, ct).ConfigureAwait(false);
-        refreshed.SpotifyUserId = tokens.SpotifyUserId;
-        refreshed.DisplayName = tokens.DisplayName;
-        if (string.IsNullOrEmpty(refreshed.RefreshToken))
-        {
-            refreshed.RefreshToken = tokens.RefreshToken;
-        }
-
-        await _store.SaveTokensAsync(jellyfinUserId, refreshed, ct).ConfigureAwait(false);
-        return refreshed;
+        finally { gate.Release(); }
     }
 
-    public Task UnlinkAsync(Guid jellyfinUserId, CancellationToken ct = default)
+    public async Task EnsureGenerationAsync(Guid userId, string generation, CancellationToken ct)
     {
-        return _store.DeleteTokensAsync(jellyfinUserId, ct);
+        var tokens = await _store.GetTokensAsync(userId, ct);
+        if (tokens == null || tokens.RelinkRequired || tokens.Generation != generation)
+            throw new InvalidOperationException("Spotify account changed. Please retry.");
+    }
+
+    public async Task MarkRejectedAsync(Guid userId, string generation, CancellationToken ct)
+    {
+        var gate = Gate(userId);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var tokens = await _store.GetTokensAsync(userId, ct);
+            if (tokens?.Generation != generation) return;
+            tokens.RelinkRequired = true;
+            await _store.SaveTokensAsync(userId, tokens, ct);
+        }
+        finally { gate.Release(); }
+    }
+
+    public async Task UnlinkAsync(Guid jellyfinUserId, CancellationToken ct = default)
+    {
+        var gate = Gate(jellyfinUserId);
+        await gate.WaitAsync(ct);
+        try
+        {
+            await _store.DeleteTokensAsync(jellyfinUserId, ct);
+            await _store.ClearUserCacheAsync(jellyfinUserId, ct);
+        }
+        finally { gate.Release(); }
     }
 
     private async Task<SpotifyTokens> ExchangeCodeAsync(string code, string verifier, CancellationToken ct)
@@ -141,7 +183,7 @@ public class SpotifyAuthService
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Spotify token exchange failed: {body}");
+            throw new InvalidOperationException("Spotify authorization failed. Please try linking again.");
         }
 
         return ParseTokenResponse(body);
@@ -168,7 +210,9 @@ public class SpotifyAuthService
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Spotify token refresh failed: {body}");
+            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest && body.Contains("invalid_grant", StringComparison.Ordinal))
+                throw new SpotifyAuthorizationException();
+            throw new HttpRequestException("Spotify token refresh is temporarily unavailable.");
         }
 
         return ParseTokenResponse(body);
@@ -221,3 +265,5 @@ public class SpotifyAuthService
         return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 }
+
+public sealed class SpotifyAuthorizationException : Exception { }

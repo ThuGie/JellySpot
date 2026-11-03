@@ -18,9 +18,9 @@ After install + **restart Jellyfin**, open the **Home** screen. Next to Home / F
 |---|---|
 | **Spotify Browse** | Music only: library, liked songs, sync, and the download queue |
 
-Inside that tab, use **Library · Liked · Sync · Queue**. Playlists, albums, and artists live under Library.
+Inside that tab, use **Library · My Playlists · Shared Playlists · Following · Liked · Sync · Queue**. Your Spotify account stays personal; shared playlists can be browsed without a Spotify link.
 
-**Admin:** left Dashboard menu → **JellySpot** (settings), same pattern as JellySeerr / StreamReady.
+**Admin:** left Dashboard menu → **JellySpot** → Settings, Health, or Downloads. No personal Spotify link is required for administration.
 
 **Everyone:** Home header → **Spotify Browse**. First time, link your own Spotify; the library then shows that account only.
 
@@ -77,7 +77,7 @@ http://127.0.0.1:8096/JellySpot/OAuth/Callback
 
 Use your real Jellyfin base URL/port if different.
 
-3. Copy **Client ID** and **Client Secret** into **Dashboard → Plugins → JellySpot → Admin**.
+3. Copy **Client ID** and **Client Secret** into **Dashboard → JellySpot → Settings**. These are server application credentials, not a personal Spotify account.
 4. Pick a **Music library** (auto-detected) or set a custom storage folder. FFmpeg is taken from Jellyfin unless you override it.
 5. Each Jellyfin user opens **Spotify Browse** → **Sync** → **Link Spotify**, then picks Liked Songs / playlists.
 
@@ -89,7 +89,8 @@ Use your real Jellyfin base URL/port if different.
 | Spotify Browse | One Home tab: Library, liked songs, sync, and the download queue |
 | Library skip | Songs already in a Jellyfin music library (ISRC or title/artist/duration) show as In library and are not downloaded again |
 | My Sync | Per-user OAuth, monitored playlists, artist include/exclude filters, Sync now |
-| Queue | Status, match scores, rematch failed/completed items |
+| Queue | Your own requests and retries; administrators manage global downloads and rematching |
+| Playlists | Private by default; owners can share/unshare, and users can browse and follow shared playlists |
 | Sync task | Scheduled `JellySpot Sync` task; uses playlist `snapshot_id` to skip unchanged lists |
 
 ## Anti-ban / rate-limit behavior
@@ -114,9 +115,21 @@ Use your real Jellyfin base URL/port if different.
     {Album} ({Year})/
       {Track} - {Title}.m4a
       cover.jpg
-  Playlists/
-    {PlaylistName}.m3u8
 ```
+
+## Playlist privacy and sharing
+
+Synced playlists and Liked Songs are stored in JellySpot's database and start **private**. Open **My Playlists**, choose a playlist, then **Share playlist** to publish it to authenticated users on this Jellyfin server. **Make private** revokes other users' future access. This does not change the playlist's visibility on Spotify.
+
+**Shared Playlists** supports local playback and **Follow playlist**. Following saves a live reference to the owner's synced membership; it does not follow on Spotify or start downloads. Private or removed playlists disappear from Following. Sharing again restores existing followers' access. Only the owner can change sharing or remove a collection. Remove also disables monitoring for that collection.
+
+Playback uses Jellyfin's normal player and the viewer's library permissions. Missing or restricted audio is marked unavailable and skipped by Play All. Audio remains deduplicated and shared under Jellyfin's library permissions. Previously viewed membership and audio already playing cannot be recalled by unsharing.
+
+### Upgrading from M3U exports
+
+The first database migration saves `jellyspot.db.pre-privacy.bak` beside the database. Existing links, settings, audio, and indexes are preserved, and monitored playlists are imported as private. Membership appears after the next successful owner sync. Failed reads preserve the last successful membership.
+
+JellySpot no longer writes personal M3U files into the music directory. Old releases did not mark their exports, so they cannot be distinguished safely from user-created files. **Health** lists legacy files needing review; startup also writes `legacy-playlist-review.txt` in the plugin data directory. Move or remove unwanted legacy exports from scanned libraries and refresh Jellyfin to remove old publicly visible playlist membership. JellySpot never automatically deletes ambiguous files.
 
 ## How matching works
 
@@ -144,3 +157,13 @@ dotnet build Jellyfin.Plugin.JellySpot/Jellyfin.Plugin.JellySpot.csproj -c Relea
 ```
 
 Target ABI: Jellyfin 10.11 / `net9.0`.
+
+## Regression checks
+
+```powershell
+dotnet test JellySpot.sln -c Release
+npm ci --prefix Jellyfin.Plugin.JellySpot.Tests
+npm test --prefix Jellyfin.Plugin.JellySpot.Tests
+```
+
+The UI checks use a simulated Jellyfin API and native playback event handler. A live Jellyfin 10.11 server is still required to verify browser playback and library scans end to end.

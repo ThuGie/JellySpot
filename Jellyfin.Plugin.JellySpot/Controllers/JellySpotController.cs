@@ -17,8 +17,9 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.JellySpot.Controllers;
 
 [ApiController]
+[JellySpotExceptionFilter]
 [Route("JellySpot")]
-public class JellySpotController : ControllerBase
+public partial class JellySpotController : ControllerBase
 {
     private readonly SpotifyAuthService _auth;
     private readonly SpotifyApiClient _spotify;
@@ -100,6 +101,8 @@ public class JellySpotController : ControllerBase
             storageRoot,
             storageExists,
             storageWritable,
+            legacyPlaylistExports = string.IsNullOrWhiteSpace(storageRoot) || !Directory.Exists(Path.Combine(storageRoot, "Playlists"))
+                ? Array.Empty<string>() : Directory.GetFiles(Path.Combine(storageRoot, "Playlists"), "*.m3u8", SearchOption.TopDirectoryOnly),
             libraries = libraries.Select(l => new
             {
                 id = l.Id,
@@ -152,7 +155,9 @@ public class JellySpotController : ControllerBase
         var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
         return Ok(new
         {
-            Linked = tokens != null,
+            Linked = tokens != null && !tokens.RelinkRequired,
+            ConnectionState = tokens == null ? "unlinked" : tokens.RelinkRequired ? "relink_required" : "connected",
+            ServerReady = !string.IsNullOrWhiteSpace(Plugin.Instance?.Configuration.SpotifyClientId),
             SpotifyDisplayName = tokens?.DisplayName,
             SpotifyUserId = tokens?.SpotifyUserId,
             Settings = settings
@@ -173,7 +178,7 @@ public class JellySpotController : ControllerBase
     {
         if (!string.IsNullOrEmpty(error))
         {
-            return Content($"<html><body><h2>Spotify authorization failed</h2><p>{error}</p></body></html>", "text/html");
+            return Content($"<html><body><h2>Spotify authorization failed</h2><p>{System.Net.WebUtility.HtmlEncode(error)}</p></body></html>", "text/html");
         }
 
         if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(state))
@@ -189,7 +194,7 @@ public class JellySpotController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "OAuth callback failed");
-            return Content($"<html><body><h2>Link failed</h2><p>{ex.Message}</p></body></html>", "text/html");
+            return Content("<html><body><h2>Link failed</h2><p>Please return to JellySpot and try linking again.</p></body></html>", "text/html");
         }
     }
 
@@ -197,10 +202,7 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> Unlink(CancellationToken ct)
     {
-        foreach (var id in GetUserIdCandidates())
-        {
-            await _auth.UnlinkAsync(id, ct).ConfigureAwait(false);
-        }
+        await _auth.UnlinkAsync(GetUserId(), ct).ConfigureAwait(false);
         return NoContent();
     }
 
@@ -289,7 +291,7 @@ public class JellySpotController : ControllerBase
     {
         var currentUserId = GetUserId();
         var tokens = await _store.GetTokensAsync(currentUserId, ct).ConfigureAwait(false);
-        if (tokens == null)
+        if (tokens == null || tokens.RelinkRequired)
         {
             return Ok(new { Linked = false });
         }
@@ -602,6 +604,8 @@ public class JellySpotController : ControllerBase
             return NotFound();
         }
 
+        if (result.Value.Playlist.ItemsRestricted) return Conflict(new { Error = "Spotify playlist membership is unavailable." });
+        await _store.SaveCollectionAsync(new UserCollection { OwnerId = userId, SourceId = id, Name = result.Value.Playlist.Name, CoverUrl = result.Value.Playlist.ImageUrl, UpdatedAtUtc = DateTime.UtcNow, Tracks = result.Value.Tracks.ToList() }, ct);
         var queued = 0;
         var skipped = 0;
         foreach (var track in result.Value.Tracks)
@@ -625,6 +629,7 @@ public class JellySpotController : ControllerBase
     {
         var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
         var tracks = await _spotify.GetLikedSongsAsync(userId, ct).ConfigureAwait(false);
+        await _store.SaveCollectionAsync(new UserCollection { OwnerId = userId, SourceId = "liked", Name = "Liked Songs", UpdatedAtUtc = DateTime.UtcNow, Tracks = tracks.ToList() }, ct);
         var queued = 0;
         var skipped = 0;
         foreach (var track in tracks)
@@ -665,15 +670,16 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> GetQueue([FromQuery] string? status, CancellationToken ct)
     {
-        var items = await _store.GetQueueAsync(status, 300, ct).ConfigureAwait(false);
-        return Ok(items);
+        var items = await _store.GetUserQueueAsync(GetUserId(), status, ct).ConfigureAwait(false);
+        return Ok(items.Select(item => new { item.Id, item.SpotifyTrackId, item.Title, item.Artists, item.Album, item.Status, item.MatchScore, item.PlaylistName, item.Error, item.UpdatedAtUtc }));
     }
 
     [HttpPost("Queue/{id}/Rematch")]
-    [Authorize]
+    [Authorize(Policy = "RequiresElevation")]
     public async Task<ActionResult> Rematch(string id, CancellationToken ct)
     {
-        await _queue.RematchAsync(id, ct).ConfigureAwait(false);
+        if (!await _store.RetryJobAsync(id, null, true, ct)) return NotFound();
+        _queue.EnsureWorker();
         return NoContent();
     }
 
@@ -681,7 +687,8 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> Retry(string id, CancellationToken ct)
     {
-        await _queue.RetryAsync(id, ct).ConfigureAwait(false);
+        if (!await _store.RetryJobAsync(id, GetUserId(), ct: ct)) return NotFound();
+        _queue.EnsureWorker();
         return NoContent();
     }
 
@@ -689,7 +696,11 @@ public class JellySpotController : ControllerBase
     [Authorize]
     public async Task<ActionResult> RetryFailed(CancellationToken ct)
     {
-        var count = await _queue.RetryFailedAsync(ct).ConfigureAwait(false);
+        var failed = await _store.GetUserQueueAsync(GetUserId(), "Failed", ct);
+        var count = 0;
+        foreach (var item in failed)
+            if (await _store.RetryJobAsync(item.Id, GetUserId(), ct: ct)) count++;
+        _queue.EnsureWorker();
         return Ok(new { Retried = count });
     }
 
@@ -720,76 +731,19 @@ public class JellySpotController : ControllerBase
 
     private Guid GetUserId()
     {
-        var candidates = GetUserIdCandidates();
-        if (candidates.Count > 0)
-        {
-            return candidates[0];
-        }
-
-        throw new UnauthorizedAccessException("Unable to resolve Jellyfin user.");
-    }
-
-    private List<Guid> GetUserIdCandidates()
-    {
-        var ids = new List<Guid>();
-
-        void add(Guid id)
-        {
-            if (id != Guid.Empty && !ids.Contains(id))
-            {
-                ids.Add(id);
-            }
-        }
-
-        // Same claim JellySeerr / Jellyfin 10.11 APIs use. Never take NameIdentifier first —
-        // that GUID is often a session id, so tokens look "unlinked" on the next request.
-        var jellyfinClaim = User.Claims.FirstOrDefault(c =>
-            c.Type.Equals("Jellyfin-UserId", StringComparison.OrdinalIgnoreCase));
-        if (jellyfinClaim != null && Guid.TryParse(jellyfinClaim.Value, out var jellyfinId))
-        {
-            add(jellyfinId);
-        }
-
-        foreach (var claim in User.Claims)
-        {
-            if ((claim.Type.Equals("UserId", StringComparison.OrdinalIgnoreCase) ||
-                 claim.Type.Contains("Jellyfin-UserId", StringComparison.OrdinalIgnoreCase)) &&
-                Guid.TryParse(claim.Value, out var id))
-            {
-                add(id);
-            }
-        }
-
-        var name = User.Identity?.Name;
-        if (!string.IsNullOrEmpty(name))
-        {
-            var user = _userManager.GetUserByName(name);
-            if (user != null)
-            {
-                add(user.Id);
-            }
-        }
-
-        return ids;
+        var ids = User.Claims.Where(c => c.Type.Equals("Jellyfin-UserId", StringComparison.OrdinalIgnoreCase))
+            .Select(c => Guid.TryParse(c.Value, out var id) ? id : Guid.Empty).Distinct().ToList();
+        if (ids.Count != 1 || ids[0] == Guid.Empty || _userManager.GetUserById(ids[0]) == null)
+            throw new UnauthorizedAccessException("Unable to resolve authenticated Jellyfin user.");
+        return ids[0];
     }
 
     private async Task<Guid> ResolveLinkedUserIdAsync(CancellationToken ct)
     {
-        var candidates = GetUserIdCandidates();
-        if (candidates.Count == 0)
-        {
-            throw new UnauthorizedAccessException("Unable to resolve Jellyfin user.");
-        }
-
-        foreach (var id in candidates)
-        {
-            if (await _store.GetTokensAsync(id, ct).ConfigureAwait(false) != null)
-            {
-                return id;
-            }
-        }
-
-        return candidates[0];
+        var id = GetUserId();
+        if (await _auth.GetValidTokensAsync(id, ct) == null)
+            throw new InvalidOperationException("Link your Spotify account from Sync.");
+        return id;
     }
 
     private ActionResult ServeEmbedded(string resourceName, string contentType)

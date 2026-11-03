@@ -8,3 +8,6 @@ artifacts/
 .package-stage/
 assets/thumb.jpg
 assets/jellyspot-source.png
+
+node_modules/
+TestResults/

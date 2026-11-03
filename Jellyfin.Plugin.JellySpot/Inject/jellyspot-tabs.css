@@ -899,3 +899,6 @@ body.jellyspot-modal-open {
         border-radius: 0.85rem;
     }
 }
+.jellyspot-collection-card { padding: 1.2em; margin: .75em 0; border: 1px solid rgba(128,128,128,.35); border-radius: .75em; }
+.jellyspot-collection-card img { float: right; border-radius: .4em; margin-left: 1em; }
+.jellyspot-browse-results ol li { padding: .5em; }

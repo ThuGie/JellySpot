@@ -2,6 +2,10 @@ namespace Jellyfin.Plugin.JellySpot.Models;
 
 public class SpotifyTokens
 {
+    public string Generation { get; set; } = Guid.NewGuid().ToString("N");
+
+    public bool RelinkRequired { get; set; }
+
     public string AccessToken { get; set; } = string.Empty;
 
     public string RefreshToken { get; set; } = string.Empty;
@@ -61,6 +65,8 @@ public class TrackIndexEntry
 
 public class QueueItem
 {
+    public bool RematchRequested { get; set; }
+
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
 
     public Guid JellyfinUserId { get; set; }
@@ -236,4 +242,16 @@ public class MatchCandidate
     public bool IsrcSearch { get; set; }
 
     public string SearchQuery { get; set; } = string.Empty;
+}
+
+public class UserCollection
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public Guid OwnerId { get; set; }
+    public string SourceId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string? CoverUrl { get; set; }
+    public bool Shared { get; set; }
+    public DateTime? UpdatedAtUtc { get; set; }
+    public List<SpotifyTrackInfo> Tracks { get; set; } = [];
 }

@@ -5,17 +5,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.JellySpot.Services.Storage;
 
-public class JellySpotStore
+public partial class JellySpotStore
 {
     private readonly ILogger<JellySpotStore> _logger;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly string _dbPath;
     private readonly JsonSerializerOptions _json = new() { WriteIndented = true };
 
-    public JellySpotStore(ILogger<JellySpotStore> logger)
+    public JellySpotStore(ILogger<JellySpotStore> logger) : this(logger, null) { }
+
+    public JellySpotStore(ILogger<JellySpotStore> logger, string? databasePath)
     {
         _logger = logger;
-        _dbPath = Plugin.Instance?.GetDataPath("jellyspot.db")
+        _dbPath = databasePath ?? Plugin.Instance?.GetDataPath("jellyspot.db")
                   ?? Path.Combine(Path.GetTempPath(), "jellyspot.db");
         Initialize();
     }
@@ -76,14 +78,15 @@ public class JellySpotStore
             );
             """;
         cmd.ExecuteNonQuery();
-        MigrateQueueTrackId(conn);
+        MigratePrivacy(conn);
     }
 
-    private void MigrateQueueTrackId(SqliteConnection conn)
+    private void MigrateQueueTrackId(SqliteConnection conn, SqliteTransaction tx)
     {
-        if (!ColumnExists(conn, "queue", "spotify_track_id"))
+        if (!ColumnExists(conn, "queue", "spotify_track_id", tx))
         {
             using var alter = conn.CreateCommand();
+            alter.Transaction = tx;
             alter.CommandText = "ALTER TABLE queue ADD COLUMN spotify_track_id TEXT";
             alter.ExecuteNonQuery();
         }
@@ -109,13 +112,14 @@ public class JellySpotStore
             }
 
             using var update = conn.CreateCommand();
+            update.Transaction = tx;
             update.CommandText = "UPDATE queue SET spotify_track_id=$track WHERE id=$id";
             update.Parameters.AddWithValue("$track", trackId);
             update.Parameters.AddWithValue("$id", row.Id);
             update.ExecuteNonQuery();
         }
 
-        var keep = new HashSet<string>(StringComparer.Ordinal);
+        var keep = new Dictionary<string, string>(StringComparer.Ordinal);
         var extras = new List<string>();
         using (var dup = conn.CreateCommand())
         {
@@ -125,30 +129,48 @@ public class JellySpotStore
             {
                 var id = reader.GetString(0);
                 var trackId = reader.GetString(1);
-                if (!keep.Add(trackId))
+                if (!keep.TryAdd(trackId, id))
                 {
                     extras.Add(id);
                 }
             }
         }
 
+        // Preserve every recorded requester before collapsing legacy duplicate jobs.
+        foreach (var row in rows)
+        {
+            var item = JsonSerializer.Deserialize<QueueItem>(row.Json, _json);
+            if (item == null || item.JellyfinUserId == Guid.Empty || !keep.TryGetValue(item.SpotifyTrackId, out var jobId)) continue;
+            using var request = conn.CreateCommand();
+            request.Transaction = tx;
+            request.CommandText = "INSERT OR IGNORE INTO queue_requests(job_id,user_id,source_id,source_name) VALUES($job,$user,$source,$name)";
+            request.Parameters.AddWithValue("$job", jobId);
+            request.Parameters.AddWithValue("$user", item.JellyfinUserId.ToString("N"));
+            request.Parameters.AddWithValue("$source", item.PlaylistId ?? "");
+            request.Parameters.AddWithValue("$name", item.PlaylistName ?? "");
+            request.ExecuteNonQuery();
+        }
+
         foreach (var id in extras)
         {
             using var del = conn.CreateCommand();
+            del.Transaction = tx;
             del.CommandText = "DELETE FROM queue WHERE id=$id";
             del.Parameters.AddWithValue("$id", id);
             del.ExecuteNonQuery();
         }
 
         using var index = conn.CreateCommand();
+            index.Transaction = tx;
         index.CommandText =
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_queue_spotify_track_id ON queue(spotify_track_id) WHERE spotify_track_id IS NOT NULL AND spotify_track_id != ''";
         index.ExecuteNonQuery();
     }
 
-    private static bool ColumnExists(SqliteConnection conn, string table, string column)
+    private static bool ColumnExists(SqliteConnection conn, string table, string column, SqliteTransaction tx)
     {
         using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
         cmd.CommandText = $"PRAGMA table_info({table})";
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
@@ -199,8 +221,9 @@ public class JellySpotStore
         await using var conn = new SqliteConnection(ConnectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM user_tokens WHERE jellyfin_user_id=$id";
+        cmd.CommandText = "DELETE FROM user_tokens WHERE jellyfin_user_id=$id OR jellyfin_user_id=$legacy";
         cmd.Parameters.AddWithValue("$id", userId.ToString("N"));
+        cmd.Parameters.AddWithValue("$legacy", userId.ToString("D"));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
@@ -338,45 +361,64 @@ public class JellySpotStore
         return result is string json ? JsonSerializer.Deserialize<QueueItem>(json, _json) : null;
     }
 
-    public async Task<EnqueueResult> EnqueueAsync(QueueItem item, CancellationToken ct = default)
+    public async Task<EnqueueResult> EnqueueAsync(QueueItem item, CancellationToken ct = default, bool missingAudio = false)
     {
         await _lock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            item.UpdatedAtUtc = DateTime.UtcNow;
-            var existing = await GetQueueItemBySpotifyTrackIdAsync(item.SpotifyTrackId, ct).ConfigureAwait(false);
-            if (existing != null)
-            {
-                if (existing.Status is "Pending" or "Matching" or "Downloading")
-                {
-                    return EnqueueResult.AlreadyQueued;
-                }
-
-                existing.Status = "Pending";
-                existing.Error = null;
-                existing.PlaylistId = item.PlaylistId ?? existing.PlaylistId;
-                existing.PlaylistName = item.PlaylistName ?? existing.PlaylistName;
-                await UpdateQueueItemAsync(existing, ct).ConfigureAwait(false);
-                return EnqueueResult.Retried;
-            }
-
             await using var conn = new SqliteConnection(ConnectionString);
             await conn.OpenAsync(ct).ConfigureAwait(false);
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText =
-                "INSERT INTO queue(id, json, status, updated_at, spotify_track_id) VALUES($id, $json, $status, $updated, $track)";
-            cmd.Parameters.AddWithValue("$id", item.Id);
-            cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(item, _json));
-            cmd.Parameters.AddWithValue("$status", item.Status);
-            cmd.Parameters.AddWithValue("$updated", item.UpdatedAtUtc.ToString("O"));
-            cmd.Parameters.AddWithValue("$track", item.SpotifyTrackId);
-            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            return EnqueueResult.Added;
+            using var tx = conn.BeginTransaction();
+            using var find = conn.CreateCommand();
+            find.Transaction = tx;
+            find.CommandText = "SELECT json FROM queue WHERE spotify_track_id=$track";
+            find.Parameters.AddWithValue("$track", item.SpotifyTrackId);
+            var json = await find.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+            var existing = json == null ? null : JsonSerializer.Deserialize<QueueItem>(json);
+            var job = existing ?? item;
+            var result = existing == null ? EnqueueResult.Added : EnqueueResult.AlreadyQueued;
+            if (job.Status == "Completed") result = EnqueueResult.AlreadyDownloaded;
+            // Only a fresh storage check may reopen a completed job; ordinary retries cannot.
+            if (existing?.Status == "Completed" && missingAudio)
+            {
+                job.Status = "Pending";
+                job.Error = null;
+                result = EnqueueResult.Retried;
+            }
+            if (item.Status == "Completed" && existing?.Status == "Failed")
+            {
+                job.Status = "Completed";
+                job.Error = null;
+                result = EnqueueResult.AlreadyDownloaded;
+            }
+            if (existing?.Status == "Failed" && item.Status != "Completed")
+            {
+                job.Status = "Pending";
+                job.Error = null;
+                result = EnqueueResult.Retried;
+            }
+            job.UpdatedAtUtc = DateTime.UtcNow;
+            using var save = conn.CreateCommand();
+            save.Transaction = tx;
+            save.CommandText = "INSERT INTO queue(id,json,status,updated_at,spotify_track_id) VALUES($id,$json,$status,$updated,$track) ON CONFLICT(id) DO UPDATE SET json=excluded.json,status=excluded.status,updated_at=excluded.updated_at";
+            save.Parameters.AddWithValue("$id", job.Id);
+            save.Parameters.AddWithValue("$json", JsonSerializer.Serialize(job));
+            save.Parameters.AddWithValue("$status", job.Status);
+            save.Parameters.AddWithValue("$updated", job.UpdatedAtUtc.ToString("O"));
+            save.Parameters.AddWithValue("$track", job.SpotifyTrackId);
+            await save.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            using var request = conn.CreateCommand();
+            request.Transaction = tx;
+            request.CommandText = "INSERT OR IGNORE INTO queue_requests(job_id,user_id,source_id,source_name) VALUES($job,$user,$source,$name)";
+            request.Parameters.AddWithValue("$job", job.Id);
+            request.Parameters.AddWithValue("$user", item.JellyfinUserId.ToString("N"));
+            request.Parameters.AddWithValue("$source", item.PlaylistId ?? "");
+            request.Parameters.AddWithValue("$name", item.PlaylistName ?? "");
+            await request.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            tx.Commit();
+            return result;
         }
-        finally
-        {
-            _lock.Release();
-        }
+        finally { _lock.Release(); }
     }
 
     public async Task UpdateQueueItemAsync(QueueItem item, CancellationToken ct = default)
@@ -502,23 +544,13 @@ public class JellySpotStore
         await using var conn = new SqliteConnection(ConnectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT jellyfin_user_id, code_verifier FROM oauth_state WHERE state=$state";
+        cmd.CommandText = "DELETE FROM oauth_state WHERE state=$state RETURNING jellyfin_user_id, code_verifier, created_at";
         cmd.Parameters.AddWithValue("$state", state);
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-        {
-            return null;
-        }
-
-        var userId = Guid.Parse(reader.GetString(0));
-        var verifier = reader.GetString(1);
-        await reader.CloseAsync().ConfigureAwait(false);
-
-        await using var del = conn.CreateCommand();
-        del.CommandText = "DELETE FROM oauth_state WHERE state=$state";
-        del.Parameters.AddWithValue("$state", state);
-        await del.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        return (userId, verifier);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return null;
+        var created = DateTime.Parse(reader.GetString(2), null, System.Globalization.DateTimeStyles.RoundtripKind);
+        if (created < DateTime.UtcNow.AddMinutes(-10) || created > DateTime.UtcNow) return null;
+        return (Guid.Parse(reader.GetString(0)), reader.GetString(1));
     }
 
     public async Task SetCacheAsync(string key, string json, TimeSpan ttl, CancellationToken ct = default)

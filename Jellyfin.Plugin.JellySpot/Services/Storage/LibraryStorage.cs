@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 using Jellyfin.Plugin.JellySpot.Models;
 using MediaBrowser.Controller.Library;
@@ -220,35 +219,6 @@ public partial class LibraryStorage
         {
             _logger.LogDebug(ex, "Failed to download cover art");
         }
-    }
-
-    public async Task WritePlaylistM3u8Async(
-        string playlistName,
-        IEnumerable<string> relativeTrackPaths,
-        CancellationToken ct = default)
-    {
-        var root = GetStorageRoot();
-        var playlistsDir = Path.Combine(root, "Playlists");
-        Directory.CreateDirectory(playlistsDir);
-        var filePath = Path.Combine(playlistsDir, Sanitize(playlistName) + ".m3u8");
-
-        var sb = new StringBuilder();
-        sb.AppendLine("#EXTM3U");
-        foreach (var relative in relativeTrackPaths.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var absolute = GetAbsolutePath(relative);
-            if (!File.Exists(absolute))
-            {
-                continue;
-            }
-
-            sb.AppendLine($"#EXTINF:-1,{Path.GetFileNameWithoutExtension(relative)}");
-            // Relative from playlist file to track
-            var rel = Path.GetRelativePath(playlistsDir, absolute).Replace('\\', '/');
-            sb.AppendLine(rel);
-        }
-
-        await File.WriteAllTextAsync(filePath, sb.ToString(), ct).ConfigureAwait(false);
     }
 
     public static string Sanitize(string value)

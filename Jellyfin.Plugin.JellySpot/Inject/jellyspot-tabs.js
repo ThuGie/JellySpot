@@ -29,6 +29,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         },
         INNER_SECTIONS: {
             home: true,
+            collections: true,
+            shared: true,
+            following: true,
             liked: true,
             sync: true,
             queue: true,
@@ -79,6 +82,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 this.setupNativeTabWatchers();
             }
 
+            this.checkAccountIdentity();
             this.patchForeignTabManagers();
             this.scheduleEnsureNativeTabs();
             this.watchHeaderTabs();
@@ -841,7 +845,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             self.stopLinkWatch();
             let tries = 0;
             function check() {
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Me'), dataType: 'json' })
+                window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Me'), dataType: 'json' })
                     .then(function (me) {
                         me = self.coercePayload(me) || {};
                         if (!self.isLinked(me)) {
@@ -865,7 +869,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         startSpotifyLink: function (statusEl, onLinked) {
             const self = this;
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/OAuth/Start'), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/OAuth/Start'), dataType: 'json' })
                 .then(function (res) {
                     window.open(self.pick(res, 'Url', 'url'), '_blank', 'noopener');
                     if (statusEl) {
@@ -902,7 +906,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         requireLinked: function (root, onLinked) {
             const self = this;
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Me'), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Me'), dataType: 'json' })
                 .then(function (me) {
                     me = self.coercePayload(me) || {};
                     if (self.isLinked(me)) {
@@ -926,7 +930,8 @@ if (typeof window.jellySpotPlugin === 'undefined') {
 
         renderBrowse: function (root) {
             const self = this;
-            this.requireLinked(root, function (me) {
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Me'), dataType: 'json' }).then(function (me) {
+                self._accountLinked = self.isLinked(me);
                 if (root.dataset.jellyspotMounted) {
                     self.applyPendingInner(root);
                     return;
@@ -947,6 +952,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     '<div class="jellyspot-identity" hidden></div>' +
                     '<nav class="jellyspot-page-tabs" role="tablist">' +
                     '<button type="button" class="jellyspot-page-tab is-active" data-lib="home">Library</button>' +
+                    '<button type="button" class="jellyspot-page-tab" data-lib="collections">My Playlists</button>' +
+                    '<button type="button" class="jellyspot-page-tab" data-lib="shared">Shared Playlists</button>' +
+                    '<button type="button" class="jellyspot-page-tab" data-lib="following">Following</button>' +
                     '<button type="button" class="jellyspot-page-tab" data-lib="liked">Liked</button>' +
                     '<button type="button" class="jellyspot-page-tab" data-lib="sync">Sync</button>' +
                     '<button type="button" class="jellyspot-page-tab" data-lib="queue">Queue</button>' +
@@ -996,9 +1004,9 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     });
                 });
                 if (!self.applyPendingInner(root)) {
-                    self.loadLibraryHome(root);
+                    self.showLibrarySection(root, self._accountLinked ? "home" : "shared");
                 }
-            });
+            }).catch(function () { root.textContent = "Could not load JellySpot. Please sign in again or retry."; });
         },
 
         bindAppKeys: function (root) {
@@ -1307,7 +1315,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
             const host = this.openModal(root, albumName);
             host.innerHTML = '<div class="jellyspot-empty">Opening album…</div>';
-            ApiClient.ajax({
+            window.jellySpotPlugin.apiRequest({
                 type: 'GET',
                 url: ApiClient.getUrl('JellySpot/Tracks/' + encodeURIComponent(trackId)),
                 dataType: 'json'
@@ -1432,26 +1440,26 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             this.notify(root, 'Queuing ' + name + '…', 'info');
             let req;
             if (kind === 'track') {
-                req = ApiClient.ajax({
+                req = window.jellySpotPlugin.apiRequest({
                     type: 'POST',
                     url: ApiClient.getUrl('JellySpot/Queue/Tracks'),
                     data: JSON.stringify({ TrackIds: [id], PlaylistName: 'Manual' }),
                     contentType: 'application/json'
                 });
             } else if (kind === 'playlist') {
-                req = ApiClient.ajax({
+                req = window.jellySpotPlugin.apiRequest({
                     type: 'POST',
                     url: ApiClient.getUrl('JellySpot/Queue/Playlist/' + encodeURIComponent(id)),
                     contentType: 'application/json'
                 });
             } else if (kind === 'album') {
-                req = ApiClient.ajax({
+                req = window.jellySpotPlugin.apiRequest({
                     type: 'POST',
                     url: ApiClient.getUrl('JellySpot/Queue/Album/' + encodeURIComponent(id)),
                     contentType: 'application/json'
                 });
             } else {
-                req = ApiClient.ajax({
+                req = window.jellySpotPlugin.apiRequest({
                     type: 'POST',
                     url: ApiClient.getUrl('JellySpot/Queue/Liked'),
                     contentType: 'application/json'
@@ -1487,7 +1495,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }
             const state = this._searchState;
             this.setBrowseStatus(root, more ? 'Loading more…' : 'Searching…');
-            ApiClient.ajax({
+            window.jellySpotPlugin.apiRequest({
                 type: 'GET',
                 url: ApiClient.getUrl('JellySpot/Search?q=' + encodeURIComponent(q) + '&type=track,album,playlist,artist&limit=10&offset=' + state.offset),
                 dataType: 'json'
@@ -1663,7 +1671,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             this.setLibraryNav(root, 'liked');
             this.setBrowseStatus(root, 'Loading liked songs…');
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/LikedSongs'), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/LikedSongs'), dataType: 'json' })
                 .then(function (tracks) {
                     self.renderTrackPicker(root, {
                         kind: 'liked',
@@ -1725,7 +1733,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             const host = this.openModal(root, fallbackName || 'Playlist', options);
             host.innerHTML = '<div class="jellyspot-empty">Opening playlist…</div>';
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists/' + encodeURIComponent(id)), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists/' + encodeURIComponent(id)), dataType: 'json' })
                 .then(function (data) {
                     data = self.coercePayload(data) || {};
                     const playlist = self.pick(data, 'Playlist', 'playlist') || {};
@@ -1748,7 +1756,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         error: self.pick(data, 'Error', 'error') || self.pick(playlist, 'ItemsError', 'itemsError'),
                         queueAll: function () { self.queueItem('playlist', id, name, root); },
                         monitor: function () {
-                            ApiClient.ajax({
+                            window.jellySpotPlugin.apiRequest({
                                 type: 'POST',
                                 url: ApiClient.getUrl('JellySpot/Playlists/' + encodeURIComponent(id) + '/Monitor')
                             }).then(function () {
@@ -1769,7 +1777,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             const host = this.openModal(root, fallbackName || 'Album', options);
             host.innerHTML = '<div class="jellyspot-empty">Opening album…</div>';
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Albums/' + encodeURIComponent(id)), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Albums/' + encodeURIComponent(id)), dataType: 'json' })
                 .then(function (data) {
                     data = self.coercePayload(data) || {};
                     const album = self.pick(data, 'Album', 'album') || {};
@@ -1788,7 +1796,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         tracks: tracks,
                         queueAll: function () { self.queueItem('album', id, name, root); },
                         monitor: function () {
-                            ApiClient.ajax({
+                            window.jellySpotPlugin.apiRequest({
                                 type: 'POST',
                                 url: ApiClient.getUrl('JellySpot/Albums/' + encodeURIComponent(id) + '/Monitor')
                             }).then(function () {
@@ -1812,7 +1820,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 return;
             }
             this.notify(root, 'Queuing ' + ids.length + ' tracks…', 'info');
-            ApiClient.ajax({
+            window.jellySpotPlugin.apiRequest({
                 type: 'POST',
                 url: ApiClient.getUrl('JellySpot/Queue/Tracks'),
                 contentType: 'application/json',
@@ -2042,7 +2050,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 chunks.push(list.slice(i, i + 40));
             }
             Promise.all(chunks.map(function (chunk) {
-                return ApiClient.ajax({
+                return window.jellySpotPlugin.apiRequest({
                     type: 'POST',
                     url: ApiClient.getUrl('JellySpot/Library/Exists'),
                     data: JSON.stringify({ Tracks: chunk }),
@@ -2168,6 +2176,15 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             };
             this.setLibraryNav(root, id);
             this.showLibraryChrome(root, id);
+            if (this._queuePollTimer) { clearTimeout(this._queuePollTimer); this._queuePollTimer = null; }
+            if (['collections', 'shared', 'following'].includes(id)) {
+                this.loadCollections(root, id === 'collections' ? 'mine' : id);
+                return;
+            }
+            if (!this._accountLinked && id !== 'sync' && id !== 'queue') {
+                this.renderLinkGate(root.querySelector('.jellyspot-browse-results'), function () { delete root.dataset.jellyspotMounted; self.renderBrowse(root); });
+                return;
+            }
             if (id === 'sync') {
                 const pane = root.querySelector('[data-pane="sync"]');
                 if (pane) {
@@ -2281,7 +2298,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             this.setLibraryNav(root, 'home');
             this.setBrowseStatus(root, 'Loading your library…');
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library'), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library'), dataType: 'json' })
                 .then(function (data) {
                     data = self.coercePayload(data) || {};
                     if (!self.isLinked(data)) {
@@ -2424,7 +2441,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             this.setLibraryNav(root, 'recent');
             this.setBrowseStatus(root, 'Loading recently played…');
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library/RecentlyPlayed'), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library/RecentlyPlayed'), dataType: 'json' })
                 .then(function (tracks) {
                     tracks = self.coerceTracks(self.coercePayload(tracks)) || tracks || [];
                     const stage = self.startLibraryPage(root);
@@ -2457,7 +2474,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             this._topTrackRange = range;
             this.setLibraryNav(root, 'top-tracks');
             this.setBrowseStatus(root, 'Loading your top tracks…');
-            ApiClient.ajax({
+            window.jellySpotPlugin.apiRequest({
                 type: 'GET',
                 url: ApiClient.getUrl('JellySpot/Library/TopTracks?range=' + encodeURIComponent(range)),
                 dataType: 'json'
@@ -2497,7 +2514,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             this._topArtistRange = range;
             this.setLibraryNav(root, 'top-artists');
             this.setBrowseStatus(root, 'Loading your top artists…');
-            ApiClient.ajax({
+            window.jellySpotPlugin.apiRequest({
                 type: 'GET',
                 url: ApiClient.getUrl('JellySpot/Library/TopArtists?range=' + encodeURIComponent(range)),
                 dataType: 'json'
@@ -2534,7 +2551,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             this.setLibraryNav(root, 'albums');
             this.setBrowseStatus(root, 'Loading saved albums…');
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library/Albums'), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library/Albums'), dataType: 'json' })
                 .then(function (albums) {
                     albums = self.coerceTracks(self.coercePayload(albums)) || albums || [];
                     const stage = self.startLibraryPage(root);
@@ -2573,7 +2590,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             this.setLibraryNav(root, 'artists');
             this.setBrowseStatus(root, 'Loading artists…');
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library/Artists'), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Library/Artists'), dataType: 'json' })
                 .then(function (artists) {
                     artists = self.coercePayload(artists);
                     const stage = self.startLibraryPage(root);
@@ -2603,7 +2620,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             const stage = this.openModal(root, fallbackName || 'Artist', options);
             stage.innerHTML = '<div class="jellyspot-empty">Opening artist…</div>';
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Artists/' + encodeURIComponent(id)), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Artists/' + encodeURIComponent(id)), dataType: 'json' })
                 .then(function (data) {
                     data = self.coercePayload(data) || {};
                     const artist = self.pick(data, 'Artist', 'artist') || {};
@@ -2673,7 +2690,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             this.setLibraryNav(root, 'playlists');
             this.setBrowseStatus(root, 'Loading playlists…');
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists'), dataType: 'json' })
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists'), dataType: 'json' })
                 .then(function (playlists) {
                     const stage = self.startLibraryPage(root);
                     const list = playlists || [];
@@ -2736,7 +2753,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     '<div class="jellyspot-status jellyspot-sync-meta"></div>';
 
                 root.querySelector('.jellyspot-link-btn').addEventListener('click', function () {
-                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/OAuth/Start'), dataType: 'json' })
+                    window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/OAuth/Start'), dataType: 'json' })
                         .then(function (res) {
                             window.open(self.pick(res, 'Url', 'url'), '_blank', 'noopener');
                         })
@@ -2745,12 +2762,15 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         });
                 });
                 root.querySelector('.jellyspot-unlink-btn').addEventListener('click', function () {
-                    ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellySpot/OAuth/Unlink') }).then(function () {
+                    window.jellySpotPlugin.apiRequest({ type: 'POST', url: ApiClient.getUrl('JellySpot/OAuth/Unlink') }).then(function () {
+                        self._accountLinked = false;
+                        const app = self._browseRoot;
+                        if (app) { app.querySelector('.jellyspot-browse-results').innerHTML = ''; self.closeModal(app, true); }
                         self.loadSync(root);
                     });
                 });
                 root.querySelector('.jellyspot-syncnow-btn').addEventListener('click', function () {
-                    ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellySpot/Sync/Now') })
+                    window.jellySpotPlugin.apiRequest({ type: 'POST', url: ApiClient.getUrl('JellySpot/Sync/Now') })
                         .then(function () {
                             root.querySelector('.jellyspot-sync-meta').textContent = 'Sync started. Check Queue.';
                             self.loadSync(root);
@@ -2769,7 +2789,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     const splitCsv = function (value) {
                         return (value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
                     };
-                    ApiClient.ajax({
+                    window.jellySpotPlugin.apiRequest({
                         type: 'POST',
                         url: ApiClient.getUrl('JellySpot/Settings'),
                         data: JSON.stringify({
@@ -2797,16 +2817,17 @@ if (typeof window.jellySpotPlugin === 'undefined') {
         loadSync: function (root) {
             const self = this;
             Promise.all([
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Me'), dataType: 'json' }),
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists'), dataType: 'json' }).catch(function () { return []; })
+                window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Me'), dataType: 'json' }),
+                window.jellySpotPlugin.apiRequest({ type: 'GET', url: ApiClient.getUrl('JellySpot/Playlists'), dataType: 'json' }).catch(function () { return []; })
             ]).then(function (results) {
                 const me = results[0] || {};
                 const playlists = results[1] || [];
                 const settings = self.pick(me, 'Settings', 'settings') || {};
                 const linked = self.pick(me, 'Linked', 'linked') === true;
+                self._accountLinked = linked;
                 root.querySelector('.jellyspot-link-status').textContent = linked
                     ? ('Linked as ' + (self.pick(me, 'SpotifyDisplayName', 'spotifyDisplayName') || self.pick(me, 'SpotifyUserId', 'spotifyUserId') || 'Spotify user'))
-                    : 'Spotify is not linked';
+                    : (self.pick(me, 'ConnectionState', 'connectionState') === 'relink_required' ? 'Spotify authorization expired. Link your account again.' : self.pick(me, 'ServerReady', 'serverReady') === false ? 'Spotify integration is not configured. Ask your administrator to complete server setup.' : 'Spotify is not linked');
                 root.querySelector('.jellyspot-enabled').checked = self.pick(settings, 'Enabled', 'enabled') !== false;
                 root.querySelector('.jellyspot-liked').checked = !!self.pick(settings, 'SyncLikedSongs', 'syncLikedSongs');
                 root.querySelector('.jellyspot-include').value = (self.pick(settings, 'IncludeArtistFilters', 'includeArtistFilters') || []).join(', ');
@@ -2875,7 +2896,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     self.loadQueue(root);
                 });
                 root.querySelector('.jellyspot-queue-retry-failed').addEventListener('click', function () {
-                    ApiClient.ajax({
+                    window.jellySpotPlugin.apiRequest({
                         type: 'POST',
                         url: ApiClient.getUrl('JellySpot/Queue/RetryFailed')
                     }).then(function () {
@@ -2893,7 +2914,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             const self = this;
             const status = root.querySelector('.jellyspot-queue-filter').value;
             const url = ApiClient.getUrl('JellySpot/Queue') + (status ? ('?status=' + encodeURIComponent(status)) : '');
-            ApiClient.ajax({ type: 'GET', url: url, dataType: 'json' }).then(function (items) {
+            window.jellySpotPlugin.apiRequest({ type: 'GET', url: url, dataType: 'json' }).then(function (items) {
                 items = items || [];
                 const tbody = root.querySelector('.jellyspot-queue-body');
                 tbody.innerHTML = '';
@@ -2927,7 +2948,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                         retry.type = 'button';
                         retry.innerHTML = '<span>Retry</span>';
                         retry.addEventListener('click', function () {
-                            ApiClient.ajax({
+                            window.jellySpotPlugin.apiRequest({
                                 type: 'POST',
                                 url: ApiClient.getUrl('JellySpot/Queue/' + id + '/Retry')
                             }).then(function () {
@@ -2935,22 +2956,6 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                             });
                         });
                         tr.children[4].appendChild(retry);
-                    }
-                    if (st === 'Failed' || st === 'Completed') {
-                        const btn = document.createElement('button');
-                        btn.setAttribute('is', 'emby-button');
-                        btn.className = 'raised';
-                        btn.type = 'button';
-                        btn.innerHTML = '<span>Rematch</span>';
-                        btn.addEventListener('click', function () {
-                            ApiClient.ajax({
-                                type: 'POST',
-                                url: ApiClient.getUrl('JellySpot/Queue/' + id + '/Rematch')
-                            }).then(function () {
-                                self.loadQueue(root);
-                            });
-                        });
-                        tr.children[4].appendChild(btn);
                     }
                     tbody.appendChild(tr);
                 });
@@ -2987,7 +2992,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', boot);
     } else {
-        boot();
+        setTimeout(boot, 0);
     }
 
     window.addEventListener('popstate', function () {
@@ -3015,3 +3020,116 @@ if (typeof window.jellySpotPlugin === 'undefined') {
     }
 })();
 
+// Collections are persisted by the owner. Readers never use the owner's Spotify token.
+Object.assign(window.jellySpotPlugin, {
+    checkAccountIdentity: function () {
+        const identity = this.collectionIdentity();
+        if (this._identity && this._identity !== identity) {
+            document.querySelectorAll('[data-jellyspot-mounted]').forEach(function (root) { delete root.dataset.jellyspotMounted; root.innerHTML = ''; });
+            if (this._queuePollTimer) clearTimeout(this._queuePollTimer);
+            if (this._linkPollTimer) clearInterval(this._linkPollTimer);
+            this._modalStack = []; this._browseRoot = null; this._searchState = null;
+        }
+        this._identity = identity;
+    },
+    apiRequest: function (options) {
+        const self = this, identity = this.collectionIdentity();
+        if (this._identity !== identity) this.checkAccountIdentity();
+        return Promise.resolve(ApiClient.ajax(options)).then(function (value) {
+            if (identity !== self.collectionIdentity()) {
+                self.checkAccountIdentity();
+                throw new Error('Jellyfin account changed.');
+            }
+            return value;
+        });
+    },
+    collectionRequest: function (method, path, data) {
+        return window.jellySpotPlugin.apiRequest({ type: method, url: ApiClient.getUrl('JellySpot/Collections' + path),
+            contentType: 'application/json', data: data == null ? undefined : JSON.stringify(data), dataType: method === 'GET' ? 'json' : undefined });
+    },
+    collectionIdentity: function () { return String(ApiClient.serverId()) + ':' + String(ApiClient.getCurrentUserId()); },
+    loadCollections: function (root, view) {
+        const self = this, identity = this.collectionIdentity();
+        const stage = root.querySelector('.jellyspot-browse-results'), status = root.querySelector('.jellyspot-browse-status');
+        stage.innerHTML = ''; status.textContent = 'Loading playlists...';
+        this.collectionRequest('GET', '?view=' + view).then(function (items) {
+            if (identity !== self.collectionIdentity() || !root.isConnected || self._currentLib !== (view === 'mine' ? 'collections' : view)) return;
+            status.textContent = view === 'mine' ? 'Your synced playlists are private until shared. Sync or queue a playlist to import it.' : view === 'following' ? 'Following shared playlists. Private or removed playlists are unavailable.' : 'Playlists shared by people on this server.';
+            if (!items.length) { stage.textContent = 'No playlists here yet.'; return; }
+            items.forEach(function (item) {
+                const get = function (key) { return self.pick(item, key, key[0].toLowerCase() + key.slice(1)); };
+                const card = document.createElement('article'); card.className = 'jellyspot-collection-card';
+                const cover = get('CoverUrl');
+                if (cover && /^https?:/.test(cover)) { const img = document.createElement('img'); img.src = cover; img.alt = ''; img.width = 96; img.loading = 'lazy'; card.appendChild(img); }
+                const title = document.createElement('h3'); title.textContent = get('Name'); card.appendChild(title);
+                const meta = document.createElement('p'); meta.textContent = get('OwnerName') + ' / ' + get('TrackCount') + ' tracks / ' + (get('Shared') ? 'Shared' : 'Private') + ' / Updated ' + (get('UpdatedAtUtc') ? new Date(get('UpdatedAtUtc')).toLocaleString() : 'not synced yet'); card.appendChild(meta);
+                const button = document.createElement('button'); button.type = 'button'; button.className = 'jellyspot-card-btn'; button.textContent = 'Open playlist'; button.onclick = function () { self.openCollection(root, get('Id'), view); }; card.appendChild(button); stage.appendChild(card);
+            });
+        }).catch(function () { if (identity === self.collectionIdentity()) status.textContent = 'Could not load playlists. Try again.'; });
+    },
+    openCollection: function (root, id, view) {
+        const self = this, identity = this.collectionIdentity();
+        const stage = root.querySelector('.jellyspot-browse-results'), status = root.querySelector('.jellyspot-browse-status');
+        const path = '/' + encodeURIComponent(id);
+        this.collectionRequest('GET', path).then(function (data) {
+            if (identity !== self.collectionIdentity() || !root.isConnected) return;
+            const get = function (key) { return self.pick(data, key, key[0].toLowerCase() + key.slice(1)); };
+            stage.innerHTML = ''; status.textContent = get('Name') + ' / ' + (get('Shared') ? 'Shared' : 'Private') + ' / Last sync: ' + (get('UpdatedAtUtc') ? new Date(get('UpdatedAtUtc')).toLocaleString() : 'never');
+            function button(label, action) { const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'jellyspot-card-btn'; btn.textContent = label; btn.onclick = action; stage.appendChild(btn); }
+            function change(method, suffix, body) { self.collectionRequest(method, path + suffix, body).then(function () { self.openCollection(root, id, view); }).catch(function () { self.notify(root, 'Playlist is unavailable or the change failed.', 'error'); }); }
+            button('Back', function () { self.loadCollections(root, view); });
+            button('Play all available', function () { self.playCollection(root, id); });
+            if (get('Owned')) {
+                button(get('Shared') ? 'Make private' : 'Share playlist', function () { change('POST', '/Sharing', { Shared: !get('Shared') }); });
+                button('Remove playlist', function () { self.collectionRequest('DELETE', path).then(function () { self.loadCollections(root, view); }).catch(function () { self.notify(root, 'Could not remove playlist.', 'error'); }); });
+            } else button(get('Following') ? 'Unfollow' : 'Follow playlist', function () { change(get('Following') ? 'DELETE' : 'POST', '/Follow'); });
+            const list = document.createElement('ol');
+            (get('Tracks') || []).forEach(function (track) {
+                const itemId = self.pick(track, 'ItemId', 'itemId');
+                const row = document.createElement('li'); row.textContent = self.pick(track, 'Name', 'name') + ' - ' + (self.pick(track, 'Artists', 'artists') || []).join(', ') + (itemId ? '' : ' / Unavailable');
+                if (itemId) { const play = document.createElement('button'); play.type = 'button'; play.className = 'jellyspot-card-btn'; play.textContent = 'Play'; play.onclick = function () { self.playCollection(root, id, self.pick(track, 'Id', 'id')); }; row.appendChild(play); }
+                list.appendChild(row);
+            }); stage.appendChild(list);
+        }).catch(function () { if (identity === self.collectionIdentity()) { stage.innerHTML = ''; status.textContent = 'Playlist is private, removed, or unavailable.'; } });
+    },
+    playCollection: function (root, id, trackId) {
+        const self = this, identity = this.collectionIdentity();
+        // Recheck sharing and Jellyfin library access at playback time.
+        this.collectionRequest('GET', '/' + encodeURIComponent(id)).then(function (data) {
+            if (identity !== self.collectionIdentity()) return;
+            const tracks = self.pick(data, 'Tracks', 'tracks') || [];
+            const ids = tracks.filter(function (t) { return !trackId || self.pick(t, 'Id', 'id') === trackId; }).map(function (t) { return self.pick(t, 'ItemId', 'itemId'); }).filter(Boolean);
+            if (!ids.length) { self.notify(root, 'No tracks are available in your accessible Jellyfin libraries yet.', 'error'); return; }
+            // Use Jellyfin's registered item container and its native playback shortcuts.
+            // This works with the bundled player without assuming a global module loader.
+            const host = document.createElement('div');
+            host.hidden = true;
+            host.innerHTML = '<div is="emby-itemscontainer" class="itemsContainer"></div>';
+            const container = host.firstElementChild;
+            ids.forEach(function (itemId) {
+                const action = document.createElement('button');
+                action.type = 'button'; action.className = 'itemAction';
+                action.setAttribute('data-id', itemId);
+                action.setAttribute('data-serverid', ApiClient.serverId());
+                action.setAttribute('data-type', 'Audio');
+                action.setAttribute('data-mediatype', 'Audio');
+                action.setAttribute('data-action', 'playallfromhere');
+                container.appendChild(action);
+            });
+            root.appendChild(host);
+            setTimeout(function () {
+                if (identity !== self.collectionIdentity() || !root.isConnected) { host.remove(); return; }
+                const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+                container.firstElementChild.dispatchEvent(event);
+                host.remove();
+                if (!event.defaultPrevented) self.notify(root, 'Jellyfin player unavailable. Reload and try again.', 'error');
+            }, 0);
+        }).catch(function () { self.notify(root, 'Playlist is private, removed, or unavailable.', 'error'); });
+    }
+});
+
+if (!window.jellySpotPlugin._identityTimer) {
+    window.jellySpotPlugin._identityTimer = setInterval(function () {
+        if (typeof ApiClient !== 'undefined') window.jellySpotPlugin.checkAccountIdentity();
+    }, 1000);
+}

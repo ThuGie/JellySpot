@@ -43,6 +43,29 @@ public class TrackDownloader
         var track = ToTrackInfo(item);
 
         var existingPath = await _storage.FindExistingRelativePathAsync(track, ct).ConfigureAwait(false);
+        if (item.RematchRequested && existingPath != null)
+        {
+            item.Status = "Matching";
+            await _store.UpdateQueueItemAsync(item, ct);
+            var (replacement, replacementScore) = await _matcher.MatchAsync(track, true, ct);
+            item.RematchRequested = false;
+            item.YoutubeVideoId = replacement?.VideoId;
+            item.MatchScore = replacementScore;
+            item.RelativePath = existingPath;
+            item.Status = replacement != null && replacementScore >= (Plugin.Instance?.Configuration.MinMatchScore ?? 80) ? "Completed" : "Failed";
+            item.Error = item.Status == "Failed" ? "No suitable replacement match. Existing audio was preserved." : null;
+            if (item.Status == "Completed")
+                await _store.UpsertTrackIndexAsync(new TrackIndexEntry
+                {
+                    SpotifyTrackId = track.Id, YoutubeVideoId = replacement!.VideoId, MatchScore = replacementScore,
+                    RelativePath = existingPath, Title = track.Name, Artists = string.Join(", ", track.Artists), Album = track.Album, Isrc = track.Isrc
+                }, ct);
+            await _store.UpdateQueueItemAsync(item, ct);
+            return;
+        }
+        forceRematch |= item.RematchRequested;
+        item.RematchRequested = false;
+
         if (existingPath != null)
         {
             var existing = await _store.GetTrackIndexAsync(track.Id, ct).ConfigureAwait(false);
@@ -110,12 +133,14 @@ public class TrackDownloader
         var absolute = _storage.GetAbsolutePath(relative);
         Directory.CreateDirectory(Path.GetDirectoryName(absolute)!);
 
+        var staging = absolute + ".jellyspot.part";
         try
         {
-            await DownloadAudioAsync(candidate.VideoId, absolute, format, ct).ConfigureAwait(false);
+            await DownloadAudioAsync(candidate.VideoId, staging, format, ct).ConfigureAwait(false);
 
-            await EmbedTagsAsync(absolute, track, ct).ConfigureAwait(false);
+            await EmbedTagsAsync(staging, track, format, ct).ConfigureAwait(false);
             await _storage.SaveCoverAsync(Path.GetDirectoryName(absolute)!, track.CoverUrl, ct).ConfigureAwait(false);
+            File.Move(staging, absolute, overwrite: false);
 
             await _store.UpsertTrackIndexAsync(new TrackIndexEntry
             {
@@ -136,6 +161,7 @@ public class TrackDownloader
         }
         catch (Exception ex)
         {
+            TryDelete(staging);
             _logger.LogError(ex, "Download failed for {Track}", track.Name);
             item.Status = "Failed";
             item.Error = ex.Message;
@@ -261,14 +287,19 @@ public class TrackDownloader
             UseShellExecute = false,
             CreateNoWindow = true
         };
-        foreach (var arg in new[] { "-y", "-i", source, "-vn", "-c:a", codec, "-b:a", bitrateKbps + "k", dest })
+        foreach (var arg in new[] { "-y", "-i", source, "-vn", "-c:a", codec, "-b:a", bitrateKbps + "k", "-f", format == "m4a" ? "ipod" : format == "opus" ? "opus" : format, dest })
         {
             psi.ArgumentList.Add(arg);
         }
 
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start FFmpeg.");
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+        try { await process.WaitForExitAsync(ct).ConfigureAwait(false); }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            throw;
+        }
         if (process.ExitCode != 0 || !File.Exists(dest))
         {
             var stderr = await stderrTask.ConfigureAwait(false);
@@ -297,11 +328,11 @@ public class TrackDownloader
                ex.Message.Contains("403", StringComparison.Ordinal);
     }
 
-    private async Task EmbedTagsAsync(string path, SpotifyTrackInfo track, CancellationToken ct)
+    private async Task EmbedTagsAsync(string path, SpotifyTrackInfo track, string format, CancellationToken ct)
     {
         await Task.Run(() =>
         {
-            using var file = TagLib.File.Create(path);
+            using var file = TagLib.File.Create(path, "taglib/" + format, TagLib.ReadStyle.Average);
             file.Tag.Title = track.Name;
             file.Tag.Performers = track.Artists.ToArray();
             file.Tag.AlbumArtists = [track.AlbumArtist ?? track.Artists.FirstOrDefault() ?? string.Empty];
