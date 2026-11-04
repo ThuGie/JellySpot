@@ -413,7 +413,7 @@ public partial class LibraryMatchService
         return Fuzz.Ratio(left, right);
     }
 
-    private static string NormalizeTitle(string value)
+    public static string NormalizeTitle(string value)
     {
         return Normalize(StripEdition(StripFeat(value)));
     }

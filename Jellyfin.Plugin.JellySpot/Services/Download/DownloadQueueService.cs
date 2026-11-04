@@ -34,7 +34,7 @@ public class DownloadQueueService
         _logger = logger;
     }
 
-    public async Task<EnqueueResult> EnqueueTrackAsync(Guid userId, SpotifyTrackInfo track, string? playlistId = null, string? playlistName = null, CancellationToken ct = default)
+    public async Task<EnqueueResult> EnqueueTrackAsync(Guid userId, SpotifyTrackInfo track, string? playlistId = null, string? playlistName = null, CancellationToken ct = default, string? operationId = null)
     {
         var owned = await _storage.IsOwnedAsync(track, ct).ConfigureAwait(false);
 
@@ -56,7 +56,7 @@ public class DownloadQueueService
             PlaylistName = playlistName,
             Status = owned ? "Completed" : "Pending"
         };
-        var result = await _store.EnqueueAsync(item, ct, missingAudio: !owned).ConfigureAwait(false);
+        var result = await _store.EnqueueAsync(item, ct, missingAudio: !owned, operationId: operationId).ConfigureAwait(false);
         if (result is EnqueueResult.Added or EnqueueResult.Retried)
         {
             EnsureWorker();
@@ -79,7 +79,8 @@ public class DownloadQueueService
     public void RefreshLibrary()
     {
         lock (_scanGate) _scanPending = true;
-        FlushLibraryRefresh();
+        try { FlushLibraryRefresh(); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Audio completed; library scan will be retried"); }
     }
 
     public void FlushLibraryRefresh()
@@ -117,11 +118,11 @@ public class DownloadQueueService
 
             while (!ct.IsCancellationRequested)
             {
-                var pending = await _store.GetQueueAsync("Pending", 50, ct).ConfigureAwait(false);
+                var pending = await _store.EligibleJobsAsync(50, ct).ConfigureAwait(false);
                 if (pending.Count == 0)
                 {
                     await Task.Delay(1500, ct).ConfigureAwait(false);
-                    pending = await _store.GetQueueAsync("Pending", 50, ct).ConfigureAwait(false);
+                    pending = await _store.EligibleJobsAsync(50, ct).ConfigureAwait(false);
                     if (pending.Count == 0)
                     {
                         break;
@@ -133,8 +134,16 @@ public class DownloadQueueService
                     await gate.WaitAsync(ct).ConfigureAwait(false);
                     try
                     {
+                        if (!await _store.ClaimJobAsync(item.Id, ct)) return;
                         await _downloader.DownloadAsync(item, false, ct).ConfigureAwait(false);
                         if (item.Status == "Completed") RefreshLibrary();
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        item.Status = "Pending";
+                        item.Error = null;
+                        item.Progress = null;
+                        await _store.UpdateQueueItemAsync(item, CancellationToken.None);
                     }
                     catch (Exception ex)
                     {

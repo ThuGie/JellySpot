@@ -35,6 +35,8 @@ public class UserSyncSettings
 
     public List<string> ExcludeArtistFilters { get; set; } = [];
 
+    public DateTime? LastSuccessfulSyncUtc { get; set; }
+
     public DateTime? LastSyncUtc { get; set; }
 
     public string? LastSyncStatus { get; set; }
@@ -65,6 +67,10 @@ public class TrackIndexEntry
 
 public class QueueItem
 {
+    public DateTime? CompletedAtUtc { get; set; }
+    public double? Progress { get; set; }
+    public string? Stage { get; set; }
+    public bool AdminOverride { get; set; }
     public bool RematchRequested { get; set; }
 
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -135,6 +141,8 @@ public class PlaylistSnapshot
 
 public class SpotifyTrackInfo
 {
+    public DateTime? AddedAtUtc { get; set; }
+
     public string Id { get; set; } = string.Empty;
 
     public string Name { get; set; } = string.Empty;
@@ -191,6 +199,8 @@ public class SpotifyPlaylistInfo
 
 public class SpotifyAlbumInfo
 {
+    public DateTime? AddedAtUtc { get; set; }
+
     public string Id { get; set; } = string.Empty;
 
     public string Name { get; set; } = string.Empty;

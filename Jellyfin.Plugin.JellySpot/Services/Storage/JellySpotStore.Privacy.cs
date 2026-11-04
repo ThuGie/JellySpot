@@ -151,7 +151,8 @@ public partial class JellySpotStore
             var json = await find.ExecuteScalarAsync(ct) as string;
             if (json == null) return false;
             var job = JsonSerializer.Deserialize<QueueItem>(json)!;
-            if (job.Status != "Failed" && !(rematch && job.Status == "Completed")) return true;
+            if (job.Status != "Failed" && !(rematch && job.Status == "Completed") && !(userId == null && job.Status == "Pending")) return true;
+            job.AdminOverride = userId == null;
             job.Status = "Pending";
             job.Error = null;
             job.UpdatedAtUtc = DateTime.UtcNow;
@@ -215,27 +216,18 @@ public partial class JellySpotStore
         return await reader.ReadAsync(ct) ? ReadCollection(reader) : null;
     }
 
-    public async Task SaveCollectionAsync(UserCollection collection, CancellationToken ct = default)
-    {
-        await using var conn = new SqliteConnection(ConnectionString);
-        await conn.OpenAsync(ct);
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT INTO collections(id,owner_id,source_id,shared,json) VALUES($id,$owner,$source,0,$json) ON CONFLICT(owner_id,source_id) DO UPDATE SET json=excluded.json";
-        cmd.Parameters.AddWithValue("$id", collection.Id);
-        cmd.Parameters.AddWithValue("$owner", collection.OwnerId.ToString("N"));
-        cmd.Parameters.AddWithValue("$source", collection.SourceId);
-        cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(collection));
-        await cmd.ExecuteNonQueryAsync(ct);
-    }
+    public Task SaveCollectionAsync(UserCollection collection, CancellationToken ct = default)
+        => SaveBrowserCollectionAsync(collection, ct);
 
     public async Task<bool> SetSharingAsync(string id, Guid userId, bool shared, CancellationToken ct = default)
     {
         await using var conn = new SqliteConnection(ConnectionString);
         await conn.OpenAsync(ct);
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "UPDATE collections SET shared=$shared WHERE id=$id AND owner_id=$user";
+        cmd.CommandText = "UPDATE collections SET shared_at=CASE WHEN $shared=1 AND shared=0 THEN $now ELSE shared_at END,shared=$shared WHERE id=$id AND owner_id=$user";
         cmd.Parameters.AddWithValue("$id", id);
         cmd.Parameters.AddWithValue("$user", userId.ToString("N"));
+        cmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
         cmd.Parameters.AddWithValue("$shared", shared);
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
@@ -245,8 +237,9 @@ public partial class JellySpotStore
         await using var conn = new SqliteConnection(ConnectionString);
         await conn.OpenAsync(ct);
         using var cmd = conn.CreateCommand();
+        cmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
         cmd.CommandText = follow
-            ? "INSERT OR IGNORE INTO collection_follows(collection_id,user_id) SELECT id,$user FROM collections WHERE id=$id AND shared=1 AND owner_id!=$user"
+            ? "INSERT OR IGNORE INTO collection_follows(collection_id,user_id,followed_at) SELECT id,$user,$now FROM collections WHERE id=$id AND shared=1 AND owner_id!=$user"
             : "DELETE FROM collection_follows WHERE collection_id=$id AND user_id=$user";
         cmd.Parameters.AddWithValue("$id", id);
         cmd.Parameters.AddWithValue("$user", userId.ToString("N"));
@@ -270,7 +263,7 @@ public partial class JellySpotStore
         await using var conn = new SqliteConnection(ConnectionString);
         await conn.OpenAsync(ct);
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM collections WHERE id=$id AND owner_id=$user";
+        cmd.CommandText = "DELETE FROM browser_entries WHERE scope=$id AND EXISTS(SELECT 1 FROM collections WHERE id=$id AND owner_id=$user); DELETE FROM collection_follows WHERE collection_id=$id AND EXISTS(SELECT 1 FROM collections WHERE id=$id AND owner_id=$user); DELETE FROM collections WHERE id=$id AND owner_id=$user";
         cmd.Parameters.AddWithValue("$id", id);
         cmd.Parameters.AddWithValue("$user", userId.ToString("N"));
         return await cmd.ExecuteNonQueryAsync(ct) > 0;

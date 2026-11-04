@@ -21,6 +21,8 @@ namespace Jellyfin.Plugin.JellySpot.Controllers;
 [Route("JellySpot")]
 public partial class JellySpotController : ControllerBase
 {
+    private BrowserAvailabilityService? _availability;
+    private BrowserAvailabilityService Availability => _availability ??= new(_store, _libraryManager, _userManager, _storage);
     private readonly SpotifyAuthService _auth;
     private readonly SpotifyApiClient _spotify;
     private readonly JellySpotStore _store;
@@ -44,8 +46,10 @@ public partial class JellySpotController : ControllerBase
         IApplicationPaths applicationPaths,
         FfmpegLocator ffmpeg,
         LibraryStorage storage,
-        ILogger<JellySpotController> logger)
+        ILogger<JellySpotController> logger,
+        BrowserAvailabilityService? availability = null)
     {
+        _availability = availability;
         _auth = auth;
         _spotify = spotify;
         _store = store;
@@ -60,10 +64,10 @@ public partial class JellySpotController : ControllerBase
     }
 
     [HttpGet("jellyspot-tabs.js")]
-    public ActionResult GetTabsScript() => ServeEmbedded("Inject.jellyspot-tabs.js", "application/javascript");
+    public ActionResult GetTabsScript() => ServeBrowserResources("application/javascript", "Inject.jellyspot-tabs.js", "Inject.jellyspot-browser.js");
 
     [HttpGet("jellyspot-tabs.css")]
-    public ActionResult GetTabsStylesheet() => ServeEmbedded("Inject.jellyspot-tabs.css", "text/css");
+    public ActionResult GetTabsStylesheet() => ServeBrowserResources("text/css", "Inject.jellyspot-tabs.css", "Inject.jellyspot-browser.css");
 
     [HttpGet("Configuration/config.css")]
     public ActionResult GetConfigStylesheet() => ServeEmbedded("Configuration.config.css", "text/css");
@@ -573,98 +577,23 @@ public partial class JellySpotController : ControllerBase
 
     [HttpPost("Queue/Tracks")]
     [Authorize]
-    public async Task<ActionResult> QueueTracks([FromBody] QueueTracksRequest request, CancellationToken ct)
-    {
-        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
-        var queued = 0;
-        var skipped = 0;
-        var ids = request.TrackIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
-        var tracks = await _spotify.GetTracksAsync(userId, ids, ct).ConfigureAwait(false);
-        foreach (var trackId in ids)
-        {
-            if (!tracks.TryGetValue(trackId, out var track))
-            {
-                continue;
-            }
-
-            Tally(await _queue.EnqueueTrackAsync(userId, track, request.PlaylistId, request.PlaylistName, ct).ConfigureAwait(false), ref queued, ref skipped);
-        }
-
-        return Ok(new { Queued = queued, Skipped = skipped });
-    }
+    public Task<ActionResult> QueueTracks([FromBody] QueueTracksRequest request, CancellationToken ct)
+        => StartBrowserOperation(new() { Kind="tracks", TrackIds=request.TrackIds, SourceId=request.PlaylistId, SourceName=request.PlaylistName },ct);
 
     [HttpPost("Queue/Playlist/{id}")]
     [Authorize]
-    public async Task<ActionResult> QueuePlaylist(string id, CancellationToken ct)
-    {
-        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
-        var result = await _spotify.GetPlaylistWithTracksAsync(userId, id, ct).ConfigureAwait(false);
-        if (result == null)
-        {
-            return NotFound();
-        }
-
-        if (result.Value.Playlist.ItemsRestricted) return Conflict(new { Error = "Spotify playlist membership is unavailable." });
-        await _store.SaveCollectionAsync(new UserCollection { OwnerId = userId, SourceId = id, Name = result.Value.Playlist.Name, CoverUrl = result.Value.Playlist.ImageUrl, UpdatedAtUtc = DateTime.UtcNow, Tracks = result.Value.Tracks.ToList() }, ct);
-        var queued = 0;
-        var skipped = 0;
-        foreach (var track in result.Value.Tracks)
-        {
-            Tally(await _queue.EnqueueTrackAsync(userId, track, result.Value.Playlist.Id, result.Value.Playlist.Name, ct).ConfigureAwait(false), ref queued, ref skipped);
-        }
-
-        var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
-        if (!settings.MonitoredPlaylistIds.Contains(id))
-        {
-            settings.MonitoredPlaylistIds.Add(id);
-            await _store.SaveUserSettingsAsync(settings, ct).ConfigureAwait(false);
-        }
-
-        return Ok(new { Queued = queued, Skipped = skipped, Monitored = true });
-    }
+    public Task<ActionResult> QueuePlaylist(string id,CancellationToken ct)
+        => StartBrowserOperation(new() { Kind="playlist",SourceId=id },ct);
 
     [HttpPost("Queue/Liked")]
     [Authorize]
-    public async Task<ActionResult> QueueLiked(CancellationToken ct)
-    {
-        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
-        var tracks = await _spotify.GetLikedSongsAsync(userId, ct).ConfigureAwait(false);
-        await _store.SaveCollectionAsync(new UserCollection { OwnerId = userId, SourceId = "liked", Name = "Liked Songs", UpdatedAtUtc = DateTime.UtcNow, Tracks = tracks.ToList() }, ct);
-        var queued = 0;
-        var skipped = 0;
-        foreach (var track in tracks)
-        {
-            Tally(await _queue.EnqueueTrackAsync(userId, track, "liked", "Liked Songs", ct).ConfigureAwait(false), ref queued, ref skipped);
-        }
-
-        var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
-        settings.SyncLikedSongs = true;
-        await _store.SaveUserSettingsAsync(settings, ct).ConfigureAwait(false);
-        return Ok(new { Queued = queued, Skipped = skipped });
-    }
+    public Task<ActionResult> QueueLiked(CancellationToken ct)
+        => StartBrowserOperation(new() { Kind="liked" },ct);
 
     [HttpPost("Queue/Album/{id}")]
     [Authorize]
-    public async Task<ActionResult> QueueAlbum(string id, CancellationToken ct)
-    {
-        var userId = await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false);
-        var tracks = await _spotify.GetAlbumTracksAsync(userId, id, ct).ConfigureAwait(false);
-        var queued = 0;
-        var skipped = 0;
-        foreach (var track in tracks)
-        {
-            Tally(await _queue.EnqueueTrackAsync(userId, track, id, track.Album, ct).ConfigureAwait(false), ref queued, ref skipped);
-        }
-
-        var settings = await _store.GetUserSettingsAsync(userId, ct).ConfigureAwait(false);
-        if (!settings.MonitoredAlbumIds.Contains(id))
-        {
-            settings.MonitoredAlbumIds.Add(id);
-            await _store.SaveUserSettingsAsync(settings, ct).ConfigureAwait(false);
-        }
-
-        return Ok(new { Queued = queued, Skipped = skipped });
-    }
+    public Task<ActionResult> QueueAlbum(string id,CancellationToken ct)
+        => StartBrowserOperation(new() { Kind="album",SourceId=id },ct);
 
     [HttpGet("Queue")]
     [Authorize]
@@ -706,11 +635,8 @@ public partial class JellySpotController : ControllerBase
 
     [HttpPost("Sync/Now")]
     [Authorize]
-    public async Task<ActionResult> SyncNow(CancellationToken ct)
-    {
-        await _sync.SyncUserAsync(await ResolveLinkedUserIdAsync(ct).ConfigureAwait(false), ct).ConfigureAwait(false);
-        return Ok(new { Status = "started" });
-    }
+    public Task<ActionResult> SyncNow(CancellationToken ct)
+        => StartBrowserOperation(new() { Kind="sync" },ct);
 
     private static void Tally(EnqueueResult result, ref int queued, ref int skipped)
     {
@@ -744,6 +670,18 @@ public partial class JellySpotController : ControllerBase
         if (await _auth.GetValidTokensAsync(id, ct) == null)
             throw new InvalidOperationException("Link your Spotify account from Sync.");
         return id;
+    }
+
+    private ActionResult ServeBrowserResources(string contentType,params string[] names)
+    {
+        var resources=new List<string>();
+        foreach(var name in names)
+        {
+            using var stream=Assembly.GetExecutingAssembly().GetManifestResourceStream($"{typeof(Plugin).Namespace}.{name}");
+            if(stream==null)return NotFound();
+            using var reader=new StreamReader(stream);resources.Add(reader.ReadToEnd());
+        }
+        return Content(string.Join("\n",resources),contentType);
     }
 
     private ActionResult ServeEmbedded(string resourceName, string contentType)

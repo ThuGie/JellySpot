@@ -73,23 +73,9 @@ public partial class JellySpotController
         var userId = GetUserId();
         var collection = await _store.GetCollectionAsync(id, userId, ct);
         if (collection == null || _userManager.GetUserById(collection.OwnerId) == null) return NotFound();
-        var user = _userManager.GetUserById(userId)!;
-        // Query through Jellyfin's user-aware library filtering; never stream raw paths.
-        var audio = _libraryManager.GetItemList(new InternalItemsQuery(user)
-        {
-            IncludeItemTypes = [BaseItemKind.Audio], Recursive = true, IsVirtualItem = false
-        }).OfType<Audio>().ToList();
-        var rows = new List<object>();
-        foreach (var track in collection.Tracks)
-        {
-            ct.ThrowIfCancellationRequested();
-            var index = await _store.GetTrackIndexAsync(track.Id, ct);
-            var item = audio.FirstOrDefault(a => !string.IsNullOrEmpty(index?.RelativePath)
-                && string.Equals(a.Path, _storage.GetAbsolutePath(index.RelativePath), StringComparison.OrdinalIgnoreCase));
-            item ??= Services.Storage.LibraryMatchService.FindVisibleAudio(track, audio);
-            rows.Add(new { track.Id, track.Name, track.Artists, track.Album, track.DurationMs,
-                ItemId = item?.Id.ToString("N"), Available = item != null });
-        }
+        var matches=await Availability.ResolveAsync(userId,collection.Id,collection.UpdatedAtUtc?.ToString("O")??"legacy",ct);
+        var rows=collection.Tracks.Select(track=>new { track.Id,track.Name,track.Artists,track.Album,track.DurationMs,
+            ItemId=matches.TryGetValue(track.Id,out var itemId)?itemId:null,Available=matches.ContainsKey(track.Id) }).ToList();
         return Ok(new { collection.Id, collection.Name, collection.CoverUrl, collection.Shared,
             collection.UpdatedAtUtc, Owned = collection.OwnerId == userId,
             OwnerName = _userManager.GetUserById(collection.OwnerId)!.Username,

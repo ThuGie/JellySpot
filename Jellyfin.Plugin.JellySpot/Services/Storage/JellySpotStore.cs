@@ -79,6 +79,7 @@ public partial class JellySpotStore
             """;
         cmd.ExecuteNonQuery();
         MigratePrivacy(conn);
+        MigrateBrowser(conn);
     }
 
     private void MigrateQueueTrackId(SqliteConnection conn, SqliteTransaction tx)
@@ -361,7 +362,7 @@ public partial class JellySpotStore
         return result is string json ? JsonSerializer.Deserialize<QueueItem>(json, _json) : null;
     }
 
-    public async Task<EnqueueResult> EnqueueAsync(QueueItem item, CancellationToken ct = default, bool missingAudio = false)
+    public async Task<EnqueueResult> EnqueueAsync(QueueItem item, CancellationToken ct = default, bool missingAudio = false, string? operationId = null)
     {
         await _lock.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -369,6 +370,15 @@ public partial class JellySpotStore
             await using var conn = new SqliteConnection(ConnectionString);
             await conn.OpenAsync(ct).ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
+            if (operationId != null)
+            {
+                using var checkpoint = conn.CreateCommand();checkpoint.Transaction=tx;
+                checkpoint.CommandText="SELECT outcome FROM operation_tracks WHERE operation_id=$operation AND track_id=$track AND source_id=$source";
+                checkpoint.Parameters.AddWithValue("$operation",operationId);checkpoint.Parameters.AddWithValue("$track",item.SpotifyTrackId);checkpoint.Parameters.AddWithValue("$source",item.PlaylistId??"");
+                var outcome=await checkpoint.ExecuteScalarAsync(ct);
+                if(outcome!=null)return (EnqueueResult)Convert.ToInt32(outcome);
+            }
+
             using var find = conn.CreateCommand();
             find.Transaction = tx;
             find.CommandText = "SELECT json FROM queue WHERE spotify_track_id=$track";
@@ -376,6 +386,7 @@ public partial class JellySpotStore
             var json = await find.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
             var existing = json == null ? null : JsonSerializer.Deserialize<QueueItem>(json);
             var job = existing ?? item;
+            if (existing?.Status is "Completed" or "Failed") job.AdminOverride = false;
             var result = existing == null ? EnqueueResult.Added : EnqueueResult.AlreadyQueued;
             if (job.Status == "Completed") result = EnqueueResult.AlreadyDownloaded;
             // Only a fresh storage check may reopen a completed job; ordinary retries cannot.
@@ -409,12 +420,21 @@ public partial class JellySpotStore
             await save.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             using var request = conn.CreateCommand();
             request.Transaction = tx;
-            request.CommandText = "INSERT OR IGNORE INTO queue_requests(job_id,user_id,source_id,source_name) VALUES($job,$user,$source,$name)";
+            request.CommandText = "INSERT INTO queue_requests(job_id,user_id,source_id,source_name,request_id,requested_at) VALUES($job,$user,$source,$name,$request,$requested) ON CONFLICT(job_id,user_id,source_id) DO UPDATE SET hidden=0,requested_at=CASE WHEN state='Cancelled' THEN excluded.requested_at ELSE requested_at END,state=CASE WHEN state='Cancelled' THEN 'Active' ELSE state END";
+            request.Parameters.AddWithValue("$request", Guid.NewGuid().ToString("N"));
+            request.Parameters.AddWithValue("$requested", DateTime.UtcNow.ToString("O"));
             request.Parameters.AddWithValue("$job", job.Id);
             request.Parameters.AddWithValue("$user", item.JellyfinUserId.ToString("N"));
             request.Parameters.AddWithValue("$source", item.PlaylistId ?? "");
             request.Parameters.AddWithValue("$name", item.PlaylistName ?? "");
             await request.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            if(operationId!=null)
+            {
+                using var checkpoint=conn.CreateCommand();checkpoint.Transaction=tx;
+                checkpoint.CommandText="INSERT INTO operation_tracks(operation_id,track_id,source_id,outcome) VALUES($operation,$track,$source,$outcome)";
+                checkpoint.Parameters.AddWithValue("$operation",operationId);checkpoint.Parameters.AddWithValue("$track",item.SpotifyTrackId);checkpoint.Parameters.AddWithValue("$source",item.PlaylistId??"");checkpoint.Parameters.AddWithValue("$outcome",(int)result);
+                await checkpoint.ExecuteNonQueryAsync(ct);
+            }
             tx.Commit();
             return result;
         }
@@ -424,6 +444,7 @@ public partial class JellySpotStore
     public async Task UpdateQueueItemAsync(QueueItem item, CancellationToken ct = default)
     {
         item.UpdatedAtUtc = DateTime.UtcNow;
+        if (item.Status == "Completed") item.CompletedAtUtc ??= DateTime.UtcNow;
         await using var conn = new SqliteConnection(ConnectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         await using var cmd = conn.CreateCommand();

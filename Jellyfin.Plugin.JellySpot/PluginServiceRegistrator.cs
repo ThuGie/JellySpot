@@ -37,5 +37,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IScheduledTask, StartupService>();
         serviceCollection.AddHostedService<FileTransformationHostedService>();
         serviceCollection.AddHostedService<QueueLifecycleService>();
+        serviceCollection.AddHostedService<BrowserOperationService>();
+        serviceCollection.AddSingleton<BrowserAvailabilityService>();
     }
 }

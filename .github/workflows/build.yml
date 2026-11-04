@@ -34,7 +34,16 @@ jobs:
       - name: UI regression tests
         run: |
           npm ci --prefix Jellyfin.Plugin.JellySpot.Tests
+          node Jellyfin.Plugin.JellySpot.Tests/node_modules/@playwright/test/cli.js install --with-deps chromium
           npm test --prefix Jellyfin.Plugin.JellySpot.Tests
+
+      - name: Browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JellySpot-browser-review
+          path: artifacts/browser-review/*.png
+          if-no-files-found: ignore
 
       - name: Package zip
         run: bash scripts/package.sh artifacts

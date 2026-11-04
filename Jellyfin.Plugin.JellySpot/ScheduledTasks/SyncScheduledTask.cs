@@ -5,11 +5,12 @@ namespace Jellyfin.Plugin.JellySpot.ScheduledTasks;
 
 public class SyncScheduledTask : IScheduledTask
 {
-    private readonly SyncEngine _syncEngine;
+    private readonly Services.Storage.JellySpotStore _store;
+    private readonly MediaBrowser.Controller.Library.IUserManager _users;
 
-    public SyncScheduledTask(SyncEngine syncEngine)
+    public SyncScheduledTask(Services.Storage.JellySpotStore store, MediaBrowser.Controller.Library.IUserManager users)
     {
-        _syncEngine = syncEngine;
+        _store=store;_users=users;
     }
 
     public string Name => "JellySpot Sync";
@@ -23,7 +24,12 @@ public class SyncScheduledTask : IScheduledTask
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         progress.Report(0);
-        await _syncEngine.SyncAllEnabledUsersAsync(cancellationToken).ConfigureAwait(false);
+        foreach(var user in await _store.GetAllEnabledUsersAsync(cancellationToken))
+        {
+            var tokens=await _store.GetTokensAsync(user.JellyfinUserId,cancellationToken);
+            if(tokens==null||tokens.RelinkRequired||_users.GetUserById(user.JellyfinUserId)==null)continue;
+            await _store.AcceptOperationAsync(user.JellyfinUserId,tokens.Generation,new(){Kind="sync"},cancellationToken);
+        }
         progress.Report(100);
     }
 

@@ -18,7 +18,7 @@ After install + **restart Jellyfin**, open the **Home** screen. Next to Home / F
 |---|---|
 | **Spotify Browse** | Music only: library, liked songs, sync, and the download queue |
 
-Inside that tab, use **Library · My Playlists · Shared Playlists · Following · Liked · Sync · Queue**. Your Spotify account stays personal; shared playlists can be browsed without a Spotify link.
+Inside that tab, use **Overview · Library · Activity · Account**. Library contains your playlists, Spotify playlists, liked songs, albums, artists, shared playlists, and followed collections. Your Spotify account stays personal; shared playlists can be browsed without a Spotify link.
 
 **Admin:** left Dashboard menu → **JellySpot** → Settings, Health, or Downloads. No personal Spotify link is required for administration.
 
@@ -79,17 +79,17 @@ Use your real Jellyfin base URL/port if different.
 
 3. Copy **Client ID** and **Client Secret** into **Dashboard → JellySpot → Settings**. These are server application credentials, not a personal Spotify account.
 4. Pick a **Music library** (auto-detected) or set a custom storage folder. FFmpeg is taken from Jellyfin unless you override it.
-5. Each Jellyfin user opens **Spotify Browse** → **Sync** → **Link Spotify**, then picks Liked Songs / playlists.
+5. Each Jellyfin user opens **Spotify Browse** → **Account** → **Link Spotify**, then picks Liked Songs / playlists.
 
 ## Features
 
 | Area | What you get |
 |---|---|
 | Admin | Storage path, Spotify credentials, rate limits, format, match threshold |
-| Spotify Browse | One Home tab: Library, liked songs, sync, and the download queue |
+| Spotify Browse | Four views: Overview, Library, Activity, and Account; sortable lists, filters, pagination, and grid/list preferences |
 | Library skip | Songs already in a Jellyfin music library (ISRC or title/artist/duration) show as In library and are not downloaded again |
-| My Sync | Per-user OAuth, monitored playlists, artist include/exclude filters, Sync now |
-| Queue | Your own requests and retries; administrators manage global downloads and rematching |
+| My Sync | Background sync with visible stages and results; per-user OAuth, monitoring, artist filters, and manual sync |
+| Downloads | Your own requests, priorities, pause/resume, cancellation, retries, request dates, and completion dates; shared audio jobs stay deduplicated |
 | Playlists | Private by default; owners can share/unshare, and users can browse and follow shared playlists |
 | Sync task | Scheduled `JellySpot Sync` task; uses playlist `snapshot_id` to skip unchanged lists |
 
@@ -116,6 +116,24 @@ Use your real Jellyfin base URL/port if different.
       {Track} - {Title}.m4a
       cover.jpg
 ```
+
+## Browser, downloads, and sync status
+
+**Overview** loads shelves independently. **Library** offers remembered sorting, text/status filters, grid/list collection views, and 50-row pages. Track selection starts empty and survives sorting and paging. Choose Select this page, Select all matching, or Clear selection explicitly. Playlist details use browser navigation; Back returns to the previous view.
+
+**Download missing** is a one-time action. **Keep in sync** separately enables automatic monitoring. A download click is acknowledged immediately as a persisted operation; metadata lookup and local checks happen in the background. Open **Activity** to see the current stage, collection, processed counts, existing audio, failures, and results. Sync finishing means download requests were prepared; downloading and Jellyfin library scanning can finish later. Actual next-run scheduling remains managed by Jellyfin's scheduled tasks.
+
+Downloads support individual and bulk retry, pause/resume, cancel, and Low/Normal/High priority, plus Pause my downloads. Pausing affects waiting work; active tracks finish. Other users' eligible requests may still run the same shared job. Its highest eligible request priority wins, with oldest requests first on ties. Cancelling never deletes audio or changes monitoring; a later automatic sync can request it again. Clear history only hides terminal requests.
+
+Dates are explicit: Added to Spotify (when the source supplies it), Imported into JellySpot, Requested, Downloaded, Last synced, Shared, and Followed. Unknown historical dates remain Unknown. Dates are stored in UTC and shown in your browser's locale. On narrow screens, track Details exposes secondary metadata and dates.
+
+Metadata indexes are isolated by linked Spotify account generation. Full Spotify library categories are fetched in the background and marked incomplete until ready; only then does sorting represent the entire indexed category. Recently Played and Top Tracks/Artists reflect the finite lists exposed by those Spotify endpoints. Failed refreshes keep their last successful snapshot. Activity polls every two seconds during active work and every fifteen seconds when idle, and stops while the tab is hidden.
+
+### Background API compatibility
+
+The existing `POST /JellySpot/Queue/*` and `/JellySpot/Sync/Now` routes now return HTTP 202 with an operation ID and status URL. They no longer wait for Spotify or implicitly enable monitoring. Existing read routes remain available. New `/Operations`, `/Requests`, `/Activity`, and `/Browser/...` endpoints expose owner-scoped operation history, personal scheduling actions, and bounded sorted pages. Conditional reads use private ETags.
+
+The browser migration backs up the database to `jellyspot.db.pre-browser.bak` and preserves collection IDs, sharing, followers, links, indexes, and audio. Historical per-user request and added dates are not invented.
 
 ## Playlist privacy and sharing
 
@@ -163,7 +181,8 @@ Target ABI: Jellyfin 10.11 / `net9.0`.
 ```powershell
 dotnet test JellySpot.sln -c Release
 npm ci --prefix Jellyfin.Plugin.JellySpot.Tests
+node Jellyfin.Plugin.JellySpot.Tests/node_modules/@playwright/test/cli.js install chromium
 npm test --prefix Jellyfin.Plugin.JellySpot.Tests
 ```
 
-The UI checks use a simulated Jellyfin API and native playback event handler. A live Jellyfin 10.11 server is still required to verify browser playback and library scans end to end.
+The automated suite includes backend regressions, large-library fixtures, DOM checks, and Chromium checks at desktop/tablet/mobile widths in dark and light themes. Browser review screenshots are written under `artifacts/browser-review`. Optional `live.cjs` and `live-api.py` checks use the isolated Jellyfin 10.11 server session in `artifacts/jellyfin-live/session.json`; credentials and test-server files remain ignored. Those live checks cover real browser injection, native playback of generated audio, background completion, library scanning, and restricted-user sharing boundaries.

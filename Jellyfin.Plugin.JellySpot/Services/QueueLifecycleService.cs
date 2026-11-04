@@ -24,7 +24,7 @@ public sealed class QueueLifecycleService : BackgroundService
             {
                 try
                 {
-                    if ((await _store.GetQueueAsync("Pending", 1, stoppingToken)).Count > 0) _queue.EnsureWorker();
+                    if ((await _store.EligibleJobsAsync(1, stoppingToken)).Count > 0) _queue.EnsureWorker();
                     _queue.FlushLibraryRefresh();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException) { _logger.LogError(ex, "JellySpot queue maintenance failed; will retry"); }

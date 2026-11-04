@@ -6,9 +6,9 @@
   "owner": "ThuGie",
   "overview": "Spotify browse + sync for Jellyfin",
   "targetAbi": "10.11.0.0",
-  "timestamp": "2026-11-03T00:00:00.0000000Z",
-  "version": "1.0.26.0",
-  "changelog": "Separate server administration from personal Spotify accounts. Add private playlists with optional sharing and following, isolate personal queues, and harden OAuth and download recovery.",
+  "timestamp": "2026-11-04T00:00:00.0000000Z",
+  "version": "1.0.27.0",
+  "changelog": "Refresh the music browser with sortable, paginated libraries, source dates, responsive background operations, live sync progress, and personal download scheduling. Preserve private playlists and shared audio.",
   "imagePath": "thumb.png",
   "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySpot/main/assets/jellyspot.png"
 }

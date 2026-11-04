@@ -9,6 +9,7 @@ using Jellyfin.Database.Implementations.Entities;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Entities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
@@ -176,6 +177,66 @@ public class AccountTests : IDisposable
         await _store.SaveUserSettingsAsync(new() { JellyfinUserId=Guid.NewGuid(),SyncLikedSongs=true });
         var sync=new Jellyfin.Plugin.JellySpot.Services.Sync.SyncEngine(_api,_users.Object,_auth,_store,null!,NullLogger<Jellyfin.Plugin.JellySpot.Services.Sync.SyncEngine>.Instance);
         await sync.SyncAllEnabledUsersAsync(); Assert.Equal(0,_handler.Count);
+    }
+
+    [Fact] public async Task QueueAdapterAcknowledgesWithoutFetchingSpotifyOrEnablingMonitoring()
+    {
+        await _store.SaveTokensAsync(_user,Tokens());
+        var watch=System.Diagnostics.Stopwatch.StartNew();
+        var response=Assert.IsType<AcceptedResult>(await Controller().QueuePlaylist("playlist",default));
+        watch.Stop();Assert.Equal(202,response.StatusCode);Assert.Equal(0,_handler.Count);
+        Assert.Empty((await _store.GetUserSettingsAsync(_user)).MonitoredPlaylistIds);
+        Assert.Single(await _store.OperationsAsync(_user));
+        Console.WriteLine($"Operation acceptance: {watch.ElapsedMilliseconds} ms; zero Spotify calls.");
+    }
+    [Fact] public async Task ManualSyncWorksWithAutomaticSyncDisabled()
+    {
+        await _store.SaveTokensAsync(_user,Tokens());await _store.SaveUserSettingsAsync(new(){JellyfinUserId=_user,Enabled=false});
+        var queue=new Jellyfin.Plugin.JellySpot.Services.Download.DownloadQueueService(_store,null!,null!,null!,NullLogger<Jellyfin.Plugin.JellySpot.Services.Download.DownloadQueueService>.Instance);
+        try
+        {
+            var sync=new Jellyfin.Plugin.JellySpot.Services.Sync.SyncEngine(_api,_users.Object,_auth,_store,queue,NullLogger<Jellyfin.Plugin.JellySpot.Services.Sync.SyncEngine>.Instance);
+            await sync.SyncUserAsync(_user);Assert.Null((await _store.GetUserSettingsAsync(_user)).LastSuccessfulSyncUtc);
+            await sync.SyncUserAsync(_user,manual:true);var result=await _store.GetUserSettingsAsync(_user);Assert.Equal("OK",result.LastSyncStatus);Assert.NotNull(result.LastSuccessfulSyncUtc);Assert.False(result.Enabled);
+        }
+        finally{await queue.StopAsync(default);}
+    }
+    [Fact] public async Task SyncReportsPartialSuccessAndPreservesFailedCollection()
+    {
+        await _store.SaveTokensAsync(_user,Tokens());await _store.SaveUserSettingsAsync(new(){JellyfinUserId=_user,MonitoredPlaylistIds=["a","b"]});
+        var previous=new UserCollection{OwnerId=_user,SourceId="b",Name="Keep",Tracks=[new(){Id="old"}]};await _store.SaveCollectionAsync(previous);
+        _handler.Respond=request=>Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("/b")?Json(HttpStatusCode.ServiceUnavailable,"{}"):request.RequestUri.AbsolutePath.EndsWith("/a")?Json(HttpStatusCode.OK,"{\"id\":\"a\",\"name\":\"Good\",\"owner\":{\"id\":\"spotify\"},\"tracks\":{\"items\":[],\"next\":null}}"):Json(HttpStatusCode.OK,"{\"items\":[],\"next\":null}"));
+        var queue=new Jellyfin.Plugin.JellySpot.Services.Download.DownloadQueueService(_store,null!,null!,null!,NullLogger<Jellyfin.Plugin.JellySpot.Services.Download.DownloadQueueService>.Instance);
+        try
+        {
+            var operation=new BrowserOperation();var stages=new List<string>();
+            var sync=new Jellyfin.Plugin.JellySpot.Services.Sync.SyncEngine(_api,_users.Object,_auth,_store,queue,NullLogger<Jellyfin.Plugin.JellySpot.Services.Sync.SyncEngine>.Instance);
+            await sync.SyncUserAsync(_user,operation:operation,report:()=>{stages.Add(operation.Stage);return Task.CompletedTask;});
+            Assert.Equal("Partial",(await _store.GetUserSettingsAsync(_user)).LastSyncStatus);Assert.Equal(1,operation.Failed);Assert.True(operation.TotalKnown);Assert.Contains("Reading Spotify",stages);
+            Assert.Equal("old",Assert.Single((await _store.GetCollectionAsync(previous.Id,_user))!.Tracks).Id);
+        }
+        finally{await queue.StopAsync(default);}
+    }
+    [Fact] public async Task CancelledOperationStopsBeforeUpstreamRequestsAndAccountChangeFailsSafely()
+    {
+        var tokens=Tokens();await _store.SaveTokensAsync(_user,tokens);
+        var operation=await _store.AcceptOperationAsync(_user,tokens.Generation,new(){Kind="tracks",TrackIds=["track"]});await _store.CancelOperationAsync(operation.Id,_user);
+        var worker=new Jellyfin.Plugin.JellySpot.Services.BrowserOperationService(_store,_auth,_api,null!,null!,_users.Object,NullLogger<Jellyfin.Plugin.JellySpot.Services.BrowserOperationService>.Instance,null!);
+        await worker.RunAsync(operation);Assert.Equal("Cancelled",(await _store.OperationAsync(operation.Id,_user))!.Status);Assert.Equal(0,_handler.Count);
+        var stale=await _store.AcceptOperationAsync(_user,tokens.Generation,new(){Kind="tracks",TrackIds=["track"]});await _store.SaveTokensAsync(_user,Tokens());await worker.RunAsync(stale);Assert.Equal("Failed",(await _store.OperationAsync(stale.Id,_user))!.Status);Assert.Equal(0,_handler.Count);
+    }
+
+    [Fact] public async Task AvailabilityBatchesAndCachesButInvalidatesForLibraryAndPolicyChanges()
+    {
+        var collection=new UserCollection{OwnerId=_user,SourceId="cache",Name="Cache",Tracks=[new(){Id="track",Name="Song",Artists=["Artist"],DurationMs=180000}]};await _store.SaveCollectionAsync(collection);
+        var libraries=new Mock<ILibraryManager>();libraries.Setup(l=>l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([new MediaBrowser.Controller.Entities.Audio.Audio{Id=Guid.NewGuid(),Name="Song",Artists=["Artist"],RunTimeTicks=TimeSpan.FromMinutes(3).Ticks}]);
+        using var availability=new Jellyfin.Plugin.JellySpot.Services.BrowserAvailabilityService(_store,libraries.Object,_users.Object,null!);
+        Assert.Single(await availability.ResolveAsync(_user,collection.Id,"revision"));Assert.Single(await availability.ResolveAsync(_user,collection.Id,"revision"));
+        libraries.Verify(l=>l.GetItemList(It.IsAny<InternalItemsQuery>()),Times.Once);
+        libraries.Raise(l=>l.ItemUpdated+=null!,libraries.Object,new ItemChangeEventArgs());await availability.ResolveAsync(_user,collection.Id,"revision");libraries.Verify(l=>l.GetItemList(It.IsAny<InternalItemsQuery>()),Times.Exactly(2));
+        libraries.Setup(l=>l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([]);
+        _users.Raise(u=>u.OnUserUpdated+=null!,_users.Object,new Jellyfin.Data.Events.GenericEventArgs<User>(_users.Object.GetUserById(_user)!));
+        Assert.Empty(await availability.ResolveAsync(_user,collection.Id,"revision"));
     }
 
     private static HttpResponseMessage Json(HttpStatusCode status,string json)=>new(status){Content=new StringContent(json,Encoding.UTF8,"application/json")};

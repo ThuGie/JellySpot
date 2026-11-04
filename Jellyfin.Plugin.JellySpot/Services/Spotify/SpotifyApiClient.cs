@@ -186,6 +186,7 @@ public class SpotifyApiClient
                 }
 
                 var track = ParseTrack(trackEl);
+                if (item.TryGetProperty("added_at", out var added) && DateTime.TryParse(added.GetString(), null, System.Globalization.DateTimeStyles.AdjustToUniversal, out var addedAt)) track.AddedAtUtc = addedAt;
                 if (!string.IsNullOrEmpty(track.Id))
                 {
                     tracks.Add(track);
@@ -401,6 +402,7 @@ public class SpotifyApiClient
             {
                 var albumEl = item.TryGetProperty("album", out var nested) ? nested : item;
                 var album = ParseAlbum(albumEl);
+                if (item.TryGetProperty("added_at", out var added) && DateTime.TryParse(added.GetString(), null, System.Globalization.DateTimeStyles.AdjustToUniversal, out var addedAt)) album.AddedAtUtc = addedAt;
                 if (!string.IsNullOrEmpty(album.Id))
                 {
                     albums.Add(album);
@@ -915,6 +917,7 @@ public class SpotifyApiClient
             }
 
             var track = ParseTrack(trackEl);
+            if (item.TryGetProperty("added_at", out var added) && DateTime.TryParse(added.GetString(), null, System.Globalization.DateTimeStyles.AdjustToUniversal, out var addedAt)) track.AddedAtUtc = addedAt;
             if (!string.IsNullOrEmpty(track.Id))
             {
                 tracks.Add(track);

@@ -45,7 +45,9 @@ public class TrackDownloader
         var existingPath = await _storage.FindExistingRelativePathAsync(track, ct).ConfigureAwait(false);
         if (item.RematchRequested && existingPath != null)
         {
-            item.Status = "Matching";
+            item.Stage = "Matching";
+        item.Progress = null;
+        item.Status = "Matching";
             await _store.UpdateQueueItemAsync(item, ct);
             var (replacement, replacementScore) = await _matcher.MatchAsync(track, true, ct);
             item.RematchRequested = false;
@@ -104,6 +106,8 @@ public class TrackDownloader
             return;
         }
 
+        item.Stage = "Matching";
+        item.Progress = null;
         item.Status = "Matching";
         await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
 
@@ -120,6 +124,8 @@ public class TrackDownloader
             return;
         }
 
+        item.Stage = "Downloading";
+        item.Progress = 0;
         item.Status = "Downloading";
         await _store.UpdateQueueItemAsync(item, ct).ConfigureAwait(false);
 
@@ -136,8 +142,11 @@ public class TrackDownloader
         var staging = absolute + ".jellyspot.part";
         try
         {
-            await DownloadAudioAsync(candidate.VideoId, staging, format, ct).ConfigureAwait(false);
+            await DownloadAudioAsync(candidate.VideoId, staging, format, item, ct).ConfigureAwait(false);
 
+            item.Stage = "Tagging";
+            item.Progress = null;
+            await _store.UpdateQueueItemAsync(item, ct);
             await EmbedTagsAsync(staging, track, format, ct).ConfigureAwait(false);
             await _storage.SaveCoverAsync(Path.GetDirectoryName(absolute)!, track.CoverUrl, ct).ConfigureAwait(false);
             File.Move(staging, absolute, overwrite: false);
@@ -170,7 +179,7 @@ public class TrackDownloader
         }
     }
 
-    private async Task DownloadAudioAsync(string videoId, string absolute, string format, CancellationToken ct)
+    private async Task DownloadAudioAsync(string videoId, string absolute, string format, QueueItem item, CancellationToken ct)
     {
         var streamManifest = await _youtube.Videos.Streams.GetManifestAsync(videoId, ct).ConfigureAwait(false);
         var audios = PickAudioStreams(streamManifest.GetAudioOnlyStreams().ToList(), format);
@@ -185,13 +194,21 @@ public class TrackDownloader
             var temp = absolute + ".src" + audio.Container.Name;
             try
             {
-                await _youtube.Videos.Streams.DownloadAsync(audio, temp, cancellationToken: ct).ConfigureAwait(false);
+                await _youtube.Videos.Streams.DownloadAsync(audio, temp, new InlineProgress(value =>
+                {
+                    item.Progress = value;
+                    if (DateTime.UtcNow - item.UpdatedAtUtc < TimeSpan.FromMilliseconds(750)) return;
+                    _store.UpdateQueueItemAsync(item, ct).GetAwaiter().GetResult();
+                }), ct).ConfigureAwait(false);
                 if (ContainerMatchesFormat(audio.Container, format))
                 {
                     File.Move(temp, absolute, overwrite: true);
                 }
                 else
                 {
+                    item.Stage = "Converting";
+                    item.Progress = null;
+                    await _store.UpdateQueueItemAsync(item, ct);
                     await ConvertAudioAsync(temp, absolute, format, TargetBitrateKbps(audio), ct).ConfigureAwait(false);
                     TryDelete(temp);
                 }
@@ -214,6 +231,8 @@ public class TrackDownloader
 
         throw lastForbidden ?? new InvalidOperationException("No playable audio streams.");
     }
+
+    private sealed class InlineProgress(Action<double> report) : IProgress<double> { public void Report(double value) => report(value); }
 
     private static List<IAudioStreamInfo> PickAudioStreams(IReadOnlyList<IAudioStreamInfo> streams, string format)
     {
