@@ -2,6 +2,19 @@
     display: inline-flex !important;
 }
 
+.jellyspot-spotify-icon {
+    display: block;
+    width: 1.5em;
+    height: 1.5em;
+    flex-shrink: 0;
+}
+
+[data-jellyspot-tab="browse"] .emby-button-foreground {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .headerTabs [data-jellyspot-tab="liked"],
 .headerTabs [data-jellyspot-tab="sync"],
 .headerTabs [data-jellyspot-tab="queue"],

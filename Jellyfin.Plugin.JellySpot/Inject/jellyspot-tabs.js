@@ -301,7 +301,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                     });
                     bar.appendChild(button);
                 }
-                button.textContent = self.TAB_DEFS[id].defaultTitle;
+                self.renderTabLabel(button, button, id);
             });
             if (page) {
                 Object.keys(self.TAB_DEFS).forEach(function (id) {
@@ -341,6 +341,20 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             }, true);
         },
 
+        renderTabLabel: function (button, target, id, title) {
+            const label = title || this.TAB_DEFS[id].defaultTitle;
+            button.setAttribute('aria-label', label);
+            button.setAttribute('title', label);
+            if (id === 'browse') {
+                if (target.querySelector('.jellyspot-spotify-icon')) return false;
+                target.innerHTML = '<svg class="jellyspot-spotify-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="12" fill="#1ed760"/><g fill="none" stroke="#121212" stroke-linecap="round"><path d="M5.4 8.5c4.4-1.3 9.2-.9 13.2 1.2" stroke-width="2"/><path d="M6.2 12c3.6-1.1 7.7-.7 11 1" stroke-width="1.7"/><path d="M7 15.3c2.9-.8 6.1-.5 8.8.9" stroke-width="1.5"/></g></svg>';
+                return true;
+            }
+            if (target.textContent === label) return false;
+            target.textContent = label;
+            return true;
+        },
+
         createTabButton: function (id, title) {
             const titleEl = document.createElement('div');
             titleEl.className = 'emby-button-foreground';
@@ -352,6 +366,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
             button.className = 'emby-tab-button emby-button';
             button.setAttribute('data-jellyspot-tab', id);
             button.appendChild(titleEl);
+            this.renderTabLabel(button, titleEl, id, title);
             this.bindPluginTabClick(button, id);
             return button;
         },
@@ -567,9 +582,7 @@ if (typeof window.jellySpotPlugin === 'undefined') {
                 } else {
                     self.bindPluginTabClick(button, id);
                     const titleEl = button.querySelector('.emby-button-foreground');
-                    const wanted = self.TAB_DEFS[id].defaultTitle;
-                    if (titleEl && titleEl.textContent !== wanted) {
-                        titleEl.textContent = wanted;
+                    if (titleEl && self.renderTabLabel(button, titleEl, id)) {
                         changed = true;
                     }
                 }
